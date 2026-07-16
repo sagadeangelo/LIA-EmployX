@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 500" width="100%" height="100%">
+  <defs>
+    <linearGradient id="greenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4ade80" />
+      <stop offset="50%" stop-color="#14b8a6" />
+      <stop offset="100%" stop-color="#0f766e" />
+    </linearGradient>
+    
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fde047" />
+      <stop offset="50%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+
+    <linearGradient id="xGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14b8a6" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <style>
+      .logotype {
+        font-family: 'Montserrat', 'Inter', 'Segoe UI', sans-serif;
+        font-weight: 600;
+        font-size: 85px;
+        fill: #FFFFFF;
+        letter-spacing: -1px;
+      }
+      .tagline {
+        font-family: 'Montserrat', 'Inter', 'Segoe UI', sans-serif;
+        font-weight: 500;
+        font-size: 16px;
+        letter-spacing: 8px;
+        fill: #9ca3af;
+        text-anchor: middle;
+      }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#050a14" />
+
+  <g transform="translate(100, 50)">
+    
+    <!-- ==================== ISOTIPO (Left Side) ==================== -->
+    <g transform="translate(20, 0)">
+      
+      <!-- Main 'A' Shape -->
+      <!-- Left Leg to Apex to Right Leg -->
+      <path d="M 50 310 L 140 120 A 15 15 0 0 1 165 120 L 215 220" 
+            fill="none" 
+            stroke="url(#greenGrad)" 
+            stroke-width="45" 
+            stroke-linecap="round" 
+            stroke-linejoin="round" />
+            
+      <!-- Gold Right Accent (The disconnected leg part) -->
+      <path d="M 230 250 A 40 40 0 0 1 215 310" 
+            fill="none" 
+            stroke="url(#goldGrad)" 
+            stroke-width="32" 
+            stroke-linecap="round" />
+
+      <!-- Chat Bubble Inside the 'A' -->
+      <!-- Custom path for a sleek chat bubble pointing left-down -->
+      <path d="M 125 285 C 105 285, 95 270, 95 250 C 95 230, 115 210, 150 210 C 185 210, 205 230, 205 250 C 205 270, 185 285, 150 285 L 125 285 Z" 
+            fill="url(#greenGrad)" />
+      
+      <!-- Chat Bubble Tail -->
+      <path d="M 115 280 L 80 300 L 105 260 Z" fill="#0f766e" />
+
+      <!-- Chat Bubble Dots -->
+      <circle cx="130" cy="248" r="5" fill="#050a14" />
+      <circle cx="150" cy="248" r="5" fill="#050a14" />
+      <circle cx="170" cy="248" r="5" fill="#050a14" />
+
+      <!-- 4-Pointed Star (Gold) -->
+      <path d="M 150 150 Q 150 170 170 170 Q 150 170 150 190 Q 150 170 130 170 Q 150 170 150 150 Z" 
+            fill="url(#goldGrad)" />
+    </g>
+
+
+    <!-- ==================== LOGOTIPO (Right Side) ==================== -->
+    <g transform="translate(320, 0)">
+      
+      <!-- L -->
+      <path d="M 20 100 L 20 180 A 15 15 0 0 0 35 195 L 95 195" 
+            fill="none" 
+            stroke="#FFFFFF" 
+            stroke-width="16" 
+            stroke-linecap="round" 
+            stroke-linejoin="round" />
+            
+      <!-- I -->
+      <line x1="140" y1="100" x2="140" y2="195" 
+            stroke="#FFFFFF" 
+            stroke-width="16" 
+            stroke-linecap="round" />
+
+      <!-- A -->
+      <path d="M 195 195 L 245 105 A 8 8 0 0 1 260 105 L 310 195" 
+            fill="none" 
+            stroke="#FFFFFF" 
+            stroke-width="16" 
+            stroke-linecap="round" 
+            stroke-linejoin="round" />
+            
+      <!-- A Crossbar (Gold Dash) -->
+      <line x1="260" y1="170" x2="295" y2="170" 
+            stroke="url(#goldGrad)" 
+            stroke-width="16" 
+            stroke-linecap="round" />
+
+      <!-- Horizontal Separator Line -->
+      <g transform="translate(10, 225)">
+        <line x1="0" y1="0" x2="180" y2="0" stroke="url(#greenGrad)" stroke-width="2" />
+        <circle cx="185" cy="0" r="4" fill="url(#goldGrad)" />
+        <line x1="190" y1="0" x2="330" y2="0" stroke="url(#goldGrad)" stroke-width="2" />
+      </g>
+
+      <!-- EmployX Text -->
+      <text x="15" y="310" class="logotype">
+        Employ<tspan fill="url(#xGrad)">X</tspan>
+      </text>
+
+    </g>
+
+    <!-- ==================== TAGLINE ==================== -->
+    <text x="400" y="410" class="tagline">
+      TU CARRERA. NUESTRA <tspan fill="#34d399">IA</tspan>. TU <tspan fill="#fbbf24">FUTURO.</tspan>
+    </text>
+
+  </g>
+</svg>

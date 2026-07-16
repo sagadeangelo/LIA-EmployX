@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.0",
+
+  "personal_info": {
+    "full_name": "",
+    "headline": "",
+    "email": "",
+    "phone": "",
+    "country": "",
+    "state": "",
+    "city": "",
+    "address": "",
+    "postal_code": "",
+    "nationality": "",
+    "linkedin": "",
+    "github": "",
+    "portfolio": "",
+    "website": "",
+    "availability": "",
+    "work_authorization": "",
+    "summary": ""
+  },
+
+  "preferences": {
+    "desired_position": "",
+    "employment_type": "",
+    "remote": false,
+    "hybrid": false,
+    "onsite": false,
+    "travel": false,
+    "relocation": false,
+    "salary_expectation": "",
+    "preferred_countries": []
+  },
+
+  "experience": [
+
+    {
+      "company": "",
+      "position": "",
+      "industry": "",
+      "employment_type": "",
+      "location": "",
+      "start_date": "",
+      "end_date": "",
+      "currently_working": false,
+      "years": 0,
+      "description": "",
+      "achievements": [],
+      "technologies": [],
+      "skills": [],
+      "confidence": 1.0
+    }
+
+  ],
+
+  "education": [
+
+    {
+      "institution": "",
+      "degree": "",
+      "field": "",
+      "country": "",
+      "start_date": "",
+      "end_date": "",
+      "graduated": true,
+      "description": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "certifications": [
+
+    {
+      "name": "",
+      "issuer": "",
+      "issue_date": "",
+      "expiration_date": "",
+      "credential_id": "",
+      "credential_url": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "languages": [
+
+    {
+      "language": "",
+      "level": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "skills": [
+
+    {
+      "name": "",
+      "category": "",
+      "years": 0,
+      "level": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "software": [
+
+    {
+      "name": "",
+      "level": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "projects": [
+
+    {
+      "name": "",
+      "description": "",
+      "technologies": [],
+      "url": "",
+      "confidence": 1.0
+    }
+
+  ],
+
+  "awards": [
+
+    {
+      "title": "",
+      "organization": "",
+      "date": "",
+      "description": ""
+    }
+
+  ],
+
+  "publications": [
+
+    {
+      "title": "",
+      "publisher": "",
+      "date": "",
+      "url": ""
+    }
+
+  ],
+
+  "volunteer": [
+
+    {
+      "organization": "",
+      "role": "",
+      "description": "",
+      "start_date": "",
+      "end_date": ""
+    }
+
+  ],
+
+  "keywords": [],
+
+  "ats": {
+
+    "primary_role": "",
+
+    "secondary_roles": [],
+
+    "industry": "",
+
+    "experience_level": "",
+
+    "estimated_years": 0,
+
+    "seniority": "",
+
+    "work_domains": [],
+
+    "technical_stack": [],
+
+    "soft_skills": [],
+
+    "hard_skills": []
+
+  },
+
+  "metadata": {
+
+    "language": "",
+
+    "pages": 0,
+
+    "parser": "Gemma",
+
+    "model": "",
+
+    "created_at": "",
+
+    "confidence": 1.0
+
+  }
+
+}
