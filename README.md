@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/images/logo.png" width="750" alt="LIA-EmployX">
+  <img src="apps/employx_flutter/assets/images/logo.png" width="800" alt="LIA-EmployX">
 </p>
 
 <h1 align="center">
@@ -17,42 +17,37 @@ Autonomous AI Agents working together to help you land your ideal job.
 <p align="center">
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)
-
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
-
 ![Windows](https://img.shields.io/badge/Desktop-Windows-0078D6?logo=windows)
-
 ![AI Agents](https://img.shields.io/badge/AI-Multi--Agent-7B61FF)
-
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 </p>
 
 ---
 
-# 🚀 What is LIA-EmployX?
+# 🚀 The AI Career Operating System
 
-**LIA-EmployX** is not another AI chatbot.
+LIA-EmployX is a next-generation AI platform that transforms job searching into an autonomous, intelligent workflow.
 
-It is an **AI Career Operating System** where a team of autonomous AI agents collaborates continuously to help professionals build stronger careers, discover better opportunities, optimize resumes, prepare interviews, negotiate salaries, and automate repetitive job-search tasks.
+Instead of relying on a single chatbot, LIA-EmployX coordinates a team of specialized AI Agents that continuously collaborate to optimize your professional profile, discover opportunities, improve your resume, prepare interviews, and guide your career strategy.
 
-Instead of asking one assistant to do everything...
+The goal is simple:
 
-**LIA-EmployX builds an entire AI team that works for you.**
+> **Your Career. Our AI. Your Future.**
 
 ---
 
 # ✨ Vision
 
-We believe the future of productivity is not a single AI.
+The future of Artificial Intelligence is not one assistant.
 
-The future is **multiple specialized AI agents** working together toward one objective.
+The future belongs to teams of specialized AI Agents working together.
 
-For LIA-EmployX, that objective is simple:
+LIA-EmployX is building the world's first **AI Career Operating System**, where every agent has a specialized mission while collaborating with the entire team to achieve one objective:
 
-> **Help every professional find the best possible job faster than ever before.**
+**Helping professionals land their ideal job faster than ever before.**
 
 ---
 
@@ -60,15 +55,16 @@ For LIA-EmployX, that objective is simple:
 
 ## 🟢 Career Agent IA
 
-Your personal career strategist.
+Your executive AI coordinator.
 
-**Responsibilities**
+### Responsibilities
 
-- Career planning
+- Career strategy
 - Professional roadmap
-- Skills gap detection
+- Skills gap analysis
 - Learning recommendations
-- Career mission coordination
+- Career planning
+- Mission coordination
 
 ---
 
@@ -76,13 +72,14 @@ Your personal career strategist.
 
 Your resume optimization specialist.
 
-**Responsibilities**
+### Responsibilities
 
 - ATS Optimization
 - Resume rewriting
-- Keyword enhancement
 - Resume scoring
+- Keyword enhancement
 - Professional formatting
+- AI Resume Analysis
 
 ---
 
@@ -90,13 +87,14 @@ Your resume optimization specialist.
 
 Your autonomous recruiter.
 
-**Responsibilities**
+### Responsibilities
 
 - Job discovery
 - Company matching
 - Salary analysis
 - Remote opportunities
-- Automatic recommendations
+- International opportunities
+- Intelligent recommendations
 
 ---
 
@@ -104,28 +102,29 @@ Your autonomous recruiter.
 
 | Agent | Purpose |
 |--------|----------|
-| 🎤 Interview Coach | Interview preparation |
-| 💰 Salary Negotiator | Salary negotiation strategies |
-| 🌎 Visa Advisor | International relocation & visas |
+| 🎤 Interview Coach | AI interview simulator |
+| 💰 Salary Negotiator | Salary negotiation assistant |
+| 🌍 Visa Advisor | Immigration & relocation |
 | 🤝 LinkedIn Networker | Networking automation |
 | ✉ Cover Letter Generator | Personalized cover letters |
-| 📈 Market Analyst | Labor market intelligence |
-| 📧 Email Assistant | Recruiter email automation |
-| 📱 WhatsApp Assistant | Follow-up conversations |
-| 🌍 Remote Hunter | International remote jobs |
+| 📈 Market Analyst | Job market intelligence |
+| 📧 Email Assistant | Recruiter communication |
+| 📱 WhatsApp Assistant | Automated follow-ups |
+| 🌎 Remote Hunter | Worldwide remote jobs |
 | ⚖ Legal Advisor | Employment documentation |
 
 ---
 
-# 🖥️ Features
+# 🖥️ Main Features
 
 - Multi-Agent AI Architecture
 - Mission Center
 - AI Marketplace
 - Resume Analyzer
 - ATS Optimization
+- Resume Generator
 - Job Matching
-- Cover Letter Generation
+- Cover Letter Generator
 - Interview Preparation
 - Career Dashboard
 - Professional Analytics
@@ -134,7 +133,7 @@ Your autonomous recruiter.
 
 ---
 
-# 🧩 Architecture
+# 🏗️ System Architecture
 
 ```
                     Mission Center
@@ -143,52 +142,90 @@ Your autonomous recruiter.
         │                  │                  │
         ▼                  ▼                  ▼
 
- Career Agent      CV Expert Agent     Job Hunter Agent
+ Career Agent IA     CV Expert Agent     Job Hunter Agent
 
         │                  │                  │
 
-        └────────── AI Event Bus ─────────────┘
+        └──────────── AI Event Bus ───────────┘
 
                     Agent Coordinator
 
                            │
 
-                     Local AI Models
+                  Local AI Models
                      NVIDIA NIM
-                     FastAPI Backend
+                    FastAPI Backend
 ```
+
+---
+
+# 🎯 Mission Center
+
+Unlike traditional AI assistants, LIA-EmployX allows multiple AI Agents to collaborate simultaneously.
+
+Each agent continuously executes specialized tasks while reporting progress to the Mission Center.
+
+Examples:
+
+- Improve ATS Score
+- Detect missing skills
+- Search remote jobs
+- Analyze salaries
+- Rewrite resume
+- Prepare interviews
+- Generate Cover Letters
+
+---
+
+# 🛒 AI Marketplace
+
+Expand your AI team by installing specialized agents.
+
+Examples:
+
+- Interview Coach
+- Visa Advisor
+- LinkedIn Networker
+- Salary Negotiator
+- Remote Hunter
+- Email Assistant
+- WhatsApp Assistant
+- Market Analyst
+
+Every agent extends the capabilities of the operating system.
 
 ---
 
 # 🛠️ Technology Stack
 
-### Frontend
+## Frontend
 
 - Flutter
 - Material 3
 - Desktop-first UI
-- Glassmorphism Design System
+- Glassmorphism
+- Custom Design System
 
-### Backend
+## Backend
 
 - Python
 - FastAPI
 - SQLite
 - Modular Architecture
 
-### Artificial Intelligence
+## Artificial Intelligence
 
-- Multi-Agent Architecture
+- Multi-Agent System
 - Local LLM Support
 - NVIDIA NIM
-- Event Bus
-- Autonomous Agent Coordination
+- Event Bus Architecture
+- Autonomous AI Coordination
 
 ---
 
-# 🎨 Design Philosophy
+# 🎨 UI / UX Philosophy
 
-LIA-EmployX is inspired by the experience of products like:
+LIA-EmployX is inspired by modern premium software including:
 
 - Linear
 - Cursor
@@ -196,59 +233,78 @@ LIA-EmployX is inspired by the experience of products like:
 - Notion
 - Arc Browser
 
-The objective is to build an application that feels less like traditional software...
+The objective is to create software that feels less like an application...
 
-…and more like an **AI Operating System**.
+…and more like an intelligent operating system.
 
 ---
 
 # 📸 Preview
 
-Coming soon.
+> Screenshots coming soon.
+
+Future sections will showcase:
+
+- Home Command Center
+- Mission Center
+- AI Marketplace
+- AI Team Dashboard
+- Resume Analyzer
+- Job Search Dashboard
 
 ---
 
-# 🚧 Roadmap
+# 🗺️ Development Roadmap
 
-- [x] Design System
-- [x] Desktop UI
-- [x] Multi-Agent Architecture
-- [x] Mission Center
-- [x] AI Marketplace
-- [x] Core AI Agents
-- [ ] CV Parsing Engine
-- [ ] ATS Optimization Engine
-- [ ] Job Search Automation
-- [ ] Interview Simulator
-- [ ] LinkedIn Automation
-- [ ] Email Automation
-- [ ] NVIDIA NIM Integration
-- [ ] Cloud Synchronization
-- [ ] Mobile Version
+## Phase 1
+
+- ✅ Design System
+- ✅ Desktop UI
+- ✅ AI Marketplace
+- ✅ Mission Center
+- ✅ Core AI Agents
+- ✅ Multi-Agent Architecture
+
+## Phase 2
+
+- 🚧 Resume Parser
+- 🚧 ATS Optimization Engine
+- 🚧 Job Matching Engine
+- 🚧 Interview Simulator
+- 🚧 Career Analytics
+
+## Phase 3
+
+- ⏳ NVIDIA NIM Integration
+- ⏳ Local LLM Runtime
+- ⏳ Email Automation
+- ⏳ LinkedIn Automation
+- ⏳ WhatsApp Automation
+- ⏳ Cloud Synchronization
 
 ---
 
 # 🤝 Contributing
 
-Contributions, ideas and feedback are welcome.
+Contributions, ideas, bug reports and feature requests are always welcome.
 
-If you'd like to help build the future of AI-powered career development, feel free to open an issue or submit a pull request.
+If you'd like to help build the future of AI-powered career development, feel free to open an Issue or submit a Pull Request.
 
 ---
 
 # 📄 License
 
-This project is licensed under the MIT License.
+Licensed under the MIT License.
 
 ---
 
 <p align="center">
 
-## LIA-EmployX
+# LIA-EmployX
 
 ### The AI Career Operating System
 
-**Your Career. Our AI. Your Future.**
+### Your Career. Our AI. Your Future.
 
 </p>
 
