@@ -15,7 +15,8 @@ Python: 3.12+
 from __future__ import annotations
 
 import re
-from typing import Final
+from typing import Final, Any, Literal
+from dataclasses import dataclass
 
 
 # ---------------------------------------------------------------------------
@@ -23,10 +24,22 @@ from typing import Final
 # ---------------------------------------------------------------------------
 
 SectionKey = str
-SectionMap = dict[SectionKey, str]
 
-# Estructura de retorno garantizada (orden reproducible en Python 3.7+).
-_EMPTY_SECTIONS: Final[SectionMap] = {
+DetectionMethod = Literal["header", "structural", "none"]
+
+@dataclass(slots=True)
+class SectionResult:
+    """
+    Contiene el texto extraído y metadatos sobre cómo fue detectada la sección.
+    """
+    text: str
+    confidence: float
+    detection: DetectionMethod
+
+SectionMap = dict[SectionKey, SectionResult]
+
+# Estructura de retorno garantizada.
+_EMPTY_SECTIONS: Final[dict[SectionKey, str]] = {
     "personal_info": "",
     "summary": "",
     "experience": "",
@@ -69,6 +82,7 @@ _SECTION_HEADERS: Final[dict[SectionKey, list[str]]] = {
         "employment history",
         "employment",
         "career history",
+        "featured experience",
     ],
     "education": [
         "formacion academica",
@@ -94,6 +108,8 @@ _SECTION_HEADERS: Final[dict[SectionKey, list[str]]] = {
         "competencies",
         "strengths",
         "skills",
+        "core technologies",
+        "technologies",
     ],
     "languages": [
         "idiomas",
@@ -120,77 +136,29 @@ _SECTION_HEADERS: Final[dict[SectionKey, list[str]]] = {
 }
 
 # Patrón decorativo: cualquier carácter que NO sea letra, dígito o guion bajo.
-# \W en Python es Unicode-aware por defecto, por lo que cubre emojis (🎓💡🧠),
-# símbolos tipográficos (•►▪◆★), puntuación, espacios y todo lo demás
-# sin necesidad de enumerar cada carácter.
 _DECORATIVE_PATTERN: Final[str] = r"\W"
 
 
 class CVSectionSplitter:
-    """Divide el texto plano de un CV en secciones nombradas.
-
-    No realiza ninguna interpretación semántica. No llama servicios externos.
-    No crea objetos de dominio. Su única responsabilidad es segmentar texto.
-
-    Example:
-        >>> splitter = CVSectionSplitter()
-        >>> sections = splitter.split(raw_text)
-        >>> splitter.print_summary(sections)
-    """
-
-    # ------------------------------------------------------------------
-    # Construcción
-    # ------------------------------------------------------------------
+    """Divide el texto plano de un CV en secciones nombradas."""
 
     def __init__(self) -> None:
-        # Compilar el mapa de patrones una sola vez para toda la vida del
-        # objeto. Clave: sección; valor: lista de re.Pattern compilados.
         self._patterns: dict[SectionKey, list[re.Pattern[str]]] = (
             self._compile_patterns()
         )
 
-    # ------------------------------------------------------------------
-    # API pública
-    # ------------------------------------------------------------------
-
     def split(self, text: str) -> SectionMap:
-        """Divide el texto del CV en secciones.
-
-        Args:
-            text: Texto completo del CV en formato plano.
-
-        Returns:
-            Diccionario con exactamente ocho claves:
-            personal_info, summary, experience, education,
-            skills, languages, certifications, projects.
-            Todos los valores son str.
-        """
+        """Divide el texto del CV en secciones."""
         normalized = self._normalize(text)
-        lines = self._split_lines(normalized)
-        return self._build_sections(lines)
+        blocks = self._split_blocks(normalized)
+        return self._build_sections(blocks)
 
     def process(self, text: str) -> SectionMap:
-        """Punto de entrada principal del splitter.
-
-        Equivalente a split(). Conservado para compatibilidad con la
-        API pública existente.
-
-        Args:
-            text: Texto completo del CV en formato plano.
-
-        Returns:
-            Diccionario de secciones. Ver split().
-        """
         sections = self.split(text)
         self.print_summary(sections)
         return sections
 
     def print_summary(self, sections: SectionMap) -> None:
-        """Imprime un resumen con el nombre y tamaño de cada sección.
-
-        Args:
-            sections: Diccionario devuelto por split().
-        """
         separator = "=" * 70
         print()
         print(separator)
@@ -203,17 +171,6 @@ class CVSectionSplitter:
         print()
 
     def debug(self, text: str) -> SectionMap:
-        """Ejecuta el splitter en modo diagnóstico.
-
-        Imprime información detallada sobre líneas, encabezados detectados
-        y contenido de cada sección.
-
-        Args:
-            text: Texto completo del CV en formato plano.
-
-        Returns:
-            Diccionario de secciones. Ver split().
-        """
         separator = "=" * 70
         print()
         print(separator)
@@ -221,124 +178,76 @@ class CVSectionSplitter:
         print(separator)
 
         normalized = self._normalize(text)
-        lines = self._split_lines(normalized)
-        detected = self._detect_headers(lines)
-        sections = self._build_sections(lines)
+        blocks = self._split_blocks(normalized)
+        detected = self._detect_boundaries(blocks)
+        sections = self._build_sections(blocks)
 
-        # Líneas
         print()
-        print(f"  Líneas totales : {len(lines)}")
+        print(f"  Bloques totales : {len(blocks)}")
         print()
 
-        # Encabezados
-        print("  Encabezados detectados:")
+        print("  Límites detectados:")
         print()
         if detected:
             for item in detected:
-                # Encode safely: replace characters unsupported by the
-                # current console codec with '?' instead of crashing.
-                header_text: str = item["text"]  # type: ignore[assignment]
+                header_text: str = item["text"].split("\n")[0]
                 safe_text = header_text.encode(
                     "ascii", errors="replace"
                 ).decode("ascii")
                 print(
-                    f"    linea {item['index']:>4}  "
+                    f"    bloque {item['index']:>4}  "
                     f"[{item['section']:<16}]  "
-                    f"{safe_text}"
+                    f"conf:{item['confidence']:.2f} ({item['detection']})  "
+                    f"{safe_text[:40]}"
                 )
         else:
             print("    (ninguno)")
-        print()
 
-        # Contenido de secciones
+        print()
         print("  Contenido por sección:")
         print()
         for key in _EMPTY_SECTIONS:
             value = sections.get(key, "")
             print(f"  {'-' * 66}")
-            print(f"  {key.upper()}")
+            if hasattr(value, 'confidence'):
+                print(f"  {key.upper()} [Conf: {value.confidence:.2f} | Method: {value.detection}]")
+            else:
+                print(f"  {key.upper()}")
             print(f"  {'-' * 66}")
             if value:
-                for line in value.splitlines():
+                for line in value.splitlines()[:5]:
                     print(f"    {line}")
+                if len(value.splitlines()) > 5:
+                    print("    ...")
             else:
                 print("    (vacío)")
             print()
 
         return sections
 
-    # ------------------------------------------------------------------
-    # Métodos privados — normalización
-    # ------------------------------------------------------------------
-
     def _normalize(self, text: str) -> str:
-        """Normaliza saltos de línea, tabulaciones y espacios múltiples.
-
-        Args:
-            text: Texto crudo del CV.
-
-        Returns:
-            Texto normalizado listo para segmentación.
-        """
         if not text:
             return ""
-
-        # Unificar saltos de línea (CRLF → LF, CR → LF)
         text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-        # Reemplazar tabulaciones por un espacio
         text = text.replace("\t", " ")
-
-        # Colapsar espacios múltiples en uno solo
         text = re.sub(r" {2,}", " ", text)
-
-        # Reducir más de dos saltos de línea consecutivos a exactamente dos
         text = re.sub(r"\n{3,}", "\n\n", text)
-
         return text.strip()
 
-    def _split_lines(self, text: str) -> list[str]:
-        """Divide el texto normalizado en líneas, eliminando las vacías.
-
-        Args:
-            text: Texto normalizado.
-
-        Returns:
-            Lista de líneas no vacías con espacios perimetrales eliminados.
-        """
-        return [line.strip() for line in text.split("\n") if line.strip()]
-
-    # ------------------------------------------------------------------
-    # Métodos privados — detección de encabezados
-    # ------------------------------------------------------------------
+    def _split_blocks(self, text: str) -> list[str]:
+        """Divide el texto normalizado en bloques (párrafos)."""
+        return [block.strip() for block in text.split("\n\n") if block.strip()]
 
     def _compile_patterns(self) -> dict[SectionKey, list[re.Pattern[str]]]:
-        """Compila los patrones de encabezado una sola vez.
-
-        Cada encabezado conocido se convierte en un patrón que tolera:
-        - Mayúsculas o minúsculas.
-        - Prefijos/sufijos decorativos: emojis (🎓💡🧠), símbolos tipográficos
-          (•►▪◆★⭐✓✔—), puntuación, espacios, dos puntos, etc.
-        - Espacios múltiples entre palabras.
-        - Variantes con o sin tilde (la comparación normaliza antes de match).
-
-        El prefijo/sufijo decorativo se modela como ``\\W*`` (non-word) — cualquier
-        carácter que no sea letra, dígito o guion bajo — lo que cubre
-        todos los símbolos anteriores sin enumerar cada uno.
-
-        Returns:
-            Mapa sección → lista de patrones compilados.
-        """
         compiled: dict[SectionKey, list[re.Pattern[str]]] = {}
         deco = f"(?:{_DECORATIVE_PATTERN})*"
 
         for section, headers in _SECTION_HEADERS.items():
             patterns: list[re.Pattern[str]] = []
             for header in headers:
-                # Palabras del encabezado separadas por uno o más espacios.
                 escaped = r"\s+".join(re.escape(word) for word in header.split())
                 pattern = re.compile(
-                    rf"^{deco}{escaped}{deco}$",
+                    rf"^{deco}{escaped}(?:\b|{deco})",
                     re.IGNORECASE,
                 )
                 patterns.append(pattern)
@@ -347,33 +256,15 @@ class CVSectionSplitter:
         return compiled
 
     def _normalize_for_matching(self, line: str) -> str:
-        """Elimina tildes y normaliza una línea para la comparación de patrones.
-
-        Args:
-            line: Línea original.
-
-        Returns:
-            Línea sin tildes, lista para comparar contra patrones.
-        """
         replacements = str.maketrans(
             "áéíóúÁÉÍÓÚàèìòùÀÈÌÒÙäëïöüÄËÏÖÜâêîôûÂÊÎÔÛ",
             "aeiouAEIOUaeiouAEIOUaeiouAEIOUaeiouAEIOU",
         )
         return line.translate(replacements)
 
-    def _match_header(self, line: str) -> SectionKey | None:
-        """Determina si una línea es un encabezado de sección conocido.
-
-        La detección ignora mayúsculas, símbolos decorativos, espacios
-        múltiples y tildes. Ante ambigüedad, el encabezado más largo gana.
-
-        Args:
-            line: Línea de texto ya normalizada.
-
-        Returns:
-            Clave de sección si la línea es un encabezado, None en caso contrario.
-        """
-        normalized_line = self._normalize_for_matching(line)
+    def _match_header(self, block: str) -> SectionKey | None:
+        first_line = block.split("\n")[0]
+        normalized_line = self._normalize_for_matching(first_line)
         best_section: SectionKey | None = None
         best_length: int = 0
 
@@ -387,100 +278,102 @@ class CVSectionSplitter:
 
         return best_section
 
-    def _detect_headers(
-        self, lines: list[str]
-    ) -> list[dict[str, int | str]]:
-        """Detecta todos los encabezados en la lista de líneas.
+    def _detect_structural_boundary(self, block: str) -> SectionKey | None:
+        """Heurística para detectar límites de secciones por estructura del bloque."""
+        # Detectar rangos de fechas o años sueltos (muy comunes en educación)
+        date_pattern = r"\b(?:19|20)\d{2}\b|[Pp]resente|[Aa]ctualidad"
+        role_pattern = r"\b(desarrollador|developer|ingeniero|engineer|manager|líder|leader|director|consultor|consultant|analista|analyst|jefe|coordinador|arquitecto|architect)\b"
+        edu_pattern = r"\b(universidad|university|licenciatura|bachelor|master|maestría|phd|instituto|degree|ingeniería|tecnológico)\b"
+        
+        has_date = bool(re.search(date_pattern, block, re.IGNORECASE))
+        if has_date:
+            if re.search(role_pattern, block, re.IGNORECASE):
+                # Evitar falsos positivos con certificaciones que incluyen el rol (ej. AWS Developer)
+                if not re.search(r"\b(certified|certificación|certificate|curso|course)\b", block, re.IGNORECASE):
+                    return "experience"
+            if re.search(edu_pattern, block, re.IGNORECASE):
+                return "education"
+        return None
 
-        Args:
-            lines: Lista de líneas del CV (normalizadas y sin vacías).
-
-        Returns:
-            Lista de diccionarios con index, section y text,
-            ordenados por posición ascendente.
-        """
-        found: list[dict[str, int | str]] = []
-
-        for index, line in enumerate(lines):
-            section = self._match_header(line)
+    def _detect_boundaries(self, blocks: list[str]) -> list[dict[str, Any]]:
+        found = []
+        for index, block in enumerate(blocks):
+            # 1. Intentar match explícito de encabezado
+            section = self._match_header(block)
             if section is not None:
-                found.append(
-                    {
-                        "index": index,
-                        "section": section,
-                        "text": line,
-                    }
-                )
-
+                found.append({
+                    "index": index,
+                    "section": section,
+                    "confidence": 0.95,
+                    "detection": "header",
+                    "text": block,
+                })
+                continue
+                
+            # 2. Intentar match estructural si no hubo header explícito
+            section = self._detect_structural_boundary(block)
+            if section is not None:
+                found.append({
+                    "index": index,
+                    "section": section,
+                    "confidence": 0.80,
+                    "detection": "structural",
+                    "text": block,
+                })
         return found
 
-    # ------------------------------------------------------------------
-    # Métodos privados — construcción de secciones
-    # ------------------------------------------------------------------
+    def _build_sections(self, blocks: list[str]) -> SectionMap:
+        accumulator: dict[SectionKey, list[str]] = {key: [] for key in _EMPTY_SECTIONS}
+        confidences: dict[SectionKey, float] = {}
+        detections: dict[SectionKey, str] = {}
 
-    def _build_sections(self, lines: list[str]) -> SectionMap:
-        """Construye el diccionario de secciones a partir de las líneas.
-
-        Todo el texto anterior al primer encabezado pertenece a
-        personal_info. Cada bloque entre encabezados pertenece a la sección
-        correspondiente. Los encabezados repetidos se concatenan.
-
-        Args:
-            lines: Lista de líneas del CV (normalizadas y sin vacías).
-
-        Returns:
-            Diccionario de secciones con valores str.
-        """
-        accumulator: dict[SectionKey, list[str]] = {
-            key: [] for key in _EMPTY_SECTIONS
-        }
-
-        detected = self._detect_headers(lines)
+        detected = self._detect_boundaries(blocks)
 
         if not detected:
-            accumulator["personal_info"] = lines
-            return self._join_sections(accumulator)
+            accumulator["personal_info"] = blocks
+            return self._join_sections(accumulator, confidences, detections)
 
-        first_index: int = detected[0]["index"]  # type: ignore[assignment]
+        filtered_detected = []
+        last_section = None
+        for d in detected:
+            if d["section"] != last_section:
+                filtered_detected.append(d)
+                last_section = d["section"]
 
-        # Líneas anteriores al primer encabezado → personal_info
-        accumulator["personal_info"] = lines[:first_index]
+        first_index: int = filtered_detected[0]["index"]
+        accumulator["personal_info"] = blocks[:first_index]
 
-        # Distribuir bloques entre encabezados consecutivos
-        for i, header in enumerate(detected):
-            section: SectionKey = header["section"]  # type: ignore[assignment]
-            start: int = header["index"] + 1  # type: ignore[operator]
+        for i, boundary in enumerate(filtered_detected):
+            section: SectionKey = boundary["section"]
+            
+            if section not in confidences or boundary["confidence"] > confidences[section]:
+                confidences[section] = boundary["confidence"]
+                detections[section] = boundary["detection"]
+
+            start: int = boundary["index"]
             end: int = (
-                detected[i + 1]["index"]  # type: ignore[index]
-                if i + 1 < len(detected)
-                else len(lines)
+                filtered_detected[i + 1]["index"]
+                if i + 1 < len(filtered_detected)
+                else len(blocks)
             )
-            # Encabezado repetido: concatenar en lugar de sobrescribir.
-            accumulator[section].extend(lines[start:end])
+            accumulator[section].extend(blocks[start:end])
 
-        return self._join_sections(accumulator)
+        return self._join_sections(accumulator, confidences, detections)
 
-    @staticmethod
     def _join_sections(
+        self,
         accumulator: dict[SectionKey, list[str]],
+        confidences: dict[SectionKey, float],
+        detections: dict[SectionKey, str],
     ) -> SectionMap:
-        """Convierte listas de líneas en cadenas de texto.
+        result = {}
+        for key in _EMPTY_SECTIONS:
+            text = "\n\n".join(accumulator.get(key, [])).strip()
+            conf = confidences.get(key, 0.0)
+            det = detections.get(key, "none")
+            result[key] = SectionResult(text=text, confidence=conf, detection=det) # type: ignore
+        return result
 
-        Args:
-            accumulator: Mapa sección → lista de líneas.
-
-        Returns:
-            Mapa sección → str (texto unido y sin espacios perimetrales).
-        """
-        return {
-            key: "\n".join(accumulator.get(key, [])).strip()
-            for key in _EMPTY_SECTIONS
-        }
-
-
-# ---------------------------------------------------------------------------
-# Prueba local
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
 
@@ -494,15 +387,11 @@ Ciudad de México, México
 Ingeniero de Software con más de 8 años de experiencia en desarrollo
 de aplicaciones móviles y backend.
 
-★ EXPERIENCIA LABORAL
-
 Empresa Alpha — Senior Flutter Developer (2021 – presente)
 - Desarrollo de apps multiplataforma con Flutter y Dart.
 
 Empresa Beta — Python Backend Developer (2018 – 2021)
 - APIs REST con FastAPI y Django.
-
-• EDUCACIÓN
 
 Universidad Nacional Autónoma
 Licenciatura en Ingeniería en Sistemas Computacionales — 2017
@@ -516,20 +405,18 @@ IDIOMAS
 Español — Nativo
 Inglés — C1 (TOEFL 110)
 
-Certificaciones
+Certificaciones (2023)
 
 AWS Certified Developer – Associate (2023)
 Google Cloud Professional Data Engineer (2022)
 
-Proyectos
+Proyectos Personales
 
 LIA EmployX — Plataforma de reclutamiento con IA
 OpenResume — Generador de CVs de código abierto
 """
 
     import sys
-    # Reconfigure stdout to UTF-8 so all Unicode in the sample prints
-    # correctly regardless of the Windows console default encoding.
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 

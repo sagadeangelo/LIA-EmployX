@@ -6,7 +6,7 @@ import '../models/agent_models.dart';
 import '../models/agent_activity.dart';
 import '../widgets/living_agent_node.dart';
 import '../widgets/agent_connection_painter.dart';
-import 'marketplace_screen.dart';
+import 'agent_hub_screen.dart';
 
 class MissionCenterScreen extends StatefulWidget {
   const MissionCenterScreen({Key? key}) : super(key: key);
@@ -351,7 +351,7 @@ class _MissionCenterScreenState extends State<MissionCenterScreen> with TickerPr
                         Navigator.push(
                           context,
                           PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => const MarketplaceScreen(),
+                            pageBuilder: (context, animation, secondaryAnimation) => const AgentHubScreen(),
                             transitionsBuilder: (context, animation, secondaryAnimation, child) {
                               return FadeTransition(opacity: animation, child: child);
                             },

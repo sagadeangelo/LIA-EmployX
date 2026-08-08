@@ -1,6 +1,19 @@
 import 'package:flutter/material.dart';
-import '../../../core/theme/lia_theme.dart';
+import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/theme/lia_theme.dart';
+import '../../../core/providers/mission_provider.dart';
+import '../../../core/actions/mission_actions.dart';
+import '../../../core/ui/lia_glass_panel.dart';
+import '../../../core/ui/lia_status_indicator.dart';
+import '../../../core/ui/lia_progress_bar.dart';
+import '../../../core/ui/lia_metric.dart';
+import '../../../core/ui/lia_timeline.dart';
+import '../../../core/utils/app_logger.dart';
+import '../../../core/providers/upload_provider.dart';
+import '../widgets/cv_upload_overlay.dart';
 
 class CommandCenterScreen extends StatefulWidget {
   const CommandCenterScreen({Key? key}) : super(key: key);
@@ -9,311 +22,536 @@ class CommandCenterScreen extends StatefulWidget {
   State<CommandCenterScreen> createState() => _CommandCenterScreenState();
 }
 
-class _CommandCenterScreenState extends State<CommandCenterScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _pulseController;
-  
+class _CommandCenterScreenState extends State<CommandCenterScreen> {
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+    });
   }
 
-  @override
-  void dispose() {
-    _pulseController.dispose();
-    super.dispose();
+  Future<void> _loadData() async {
+    final missionProvider = context.read<MissionProvider>();
+    final missionActions = context.read<MissionActions>();
+
+    if (missionProvider.snapshot == null) {
+      await missionActions.loadActiveMission();
+      if (missionActions.currentMission != null) {
+        missionProvider.startMonitoring(missionActions.currentMission!.id);
+      }
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // File picking — shows a confirmation sheet before starting upload
+  // ---------------------------------------------------------------------------
+
+  Future<void> _pickAndUploadCV() async {
+    final startTime = DateTime.now();
+    AppLogger.info('Flutter', 'Abriendo FilePicker...');
+
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'docx'],
+    );
+
+    final pickerDuration = DateTime.now().difference(startTime).inMilliseconds;
+
+    if (result == null || result.files.isEmpty) {
+      AppLogger.warning('Flutter', 'FilePicker cancelado o falló.',
+          durationMs: pickerDuration);
+      return;
+    }
+
+    final file = result.files.single;
+    final filePath = file.path;
+    final fileName = file.name;
+    final fileSize = file.size;
+
+    AppLogger.info(
+      'UploadFlow',
+      '1. Archivo seleccionado: nombre: $fileName, ruta: $filePath, tamaño: $fileSize bytes',
+      durationMs: pickerDuration,
+    );
+
+    if (filePath == null) {
+      AppLogger.error('Flutter',
+          'FilePicker devolvió un archivo pero la ruta es null (¿plataforma web?).');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Error: Ruta de archivo no disponible.')),
+        );
+      }
+      return;
+    }
+
+    if (!mounted) return;
+
+    // Show confirmation sheet before committing to a mission
+    final confirmed = await _showFileConfirmation(
+      context,
+      fileName: fileName,
+      fileSizeBytes: fileSize,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    await _startUploadFlow(filePath, fileName);
+  }
+
+  /// Lightweight confirmation bottom sheet shown before the upload starts.
+  /// Lets the user verify the file and cancel without creating a mission.
+  Future<bool> _showFileConfirmation(
+    BuildContext context, {
+    required String fileName,
+    required int fileSizeBytes,
+  }) async {
+    final colors = context.liaColors;
+    final double sizeMB = fileSizeBytes / (1024 * 1024);
+    final String ext = fileName.contains('.')
+        ? fileName.split('.').last.toUpperCase()
+        : '?';
+
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 36),
+          decoration: const BoxDecoration(
+            color: Color(0xFF0E1420),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 24),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade700,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              Text(
+                'CV seleccionado',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                  color: colors.accentPrimary,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // File card
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                      Border.all(color: Colors.white.withOpacity(0.07)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF8A2BE2).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.description_outlined,
+                          color: Color(0xFF8A2BE2), size: 28),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fileName,
+                            style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              _buildFileBadge(
+                                  '${sizeMB.toStringAsFixed(2)} MB'),
+                              const SizedBox(width: 8),
+                              _buildFileBadge(ext,
+                                  color: const Color(0xFF8A2BE2)),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 28),
+
+              // Action buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
+                        side:
+                            BorderSide(color: Colors.grey.shade700),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: Text(
+                        'Cancelar',
+                        style: GoogleFonts.inter(
+                            color: Colors.grey.shade400,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      icon: const Icon(Icons.analytics_outlined, size: 20),
+                      label: Text(
+                        'Analizar CV',
+                        style: GoogleFonts.inter(
+                            fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colors.accentPrimary,
+                        foregroundColor: colors.background,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        elevation: 8,
+                        shadowColor:
+                            colors.accentPrimary.withValues(alpha: 0.4),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Widget _buildFileBadge(String text, {Color? color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: (color ?? Colors.grey.shade600).withOpacity(0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+            color: (color ?? Colors.grey.shade600).withOpacity(0.3)),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.inter(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: color ?? Colors.grey.shade400,
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Core upload flow — called after confirmation
+  // ---------------------------------------------------------------------------
+
+  Future<void> _startUploadFlow(String filePath, String fileName) async {
+    if (!mounted) return;
+
+    final missionActions = context.read<MissionActions>();
+    final uploadProvider = context.read<UploadProvider>();
+    final missionProvider = context.read<MissionProvider>();
+
+    AppLogger.info('UploadFlow', 'Realizando ping al servidor...');
+    final isAlive = await missionActions.pingServer();
+
+    if (!isAlive && mounted) {
+      AppLogger.error('UploadFlow', 'Ping falló. El servidor no está disponible.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('No fue posible conectar con el servidor.')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    uploadProvider.startUpload(filePath);
+
+    AppLogger.info('UploadFlow', '2. Overlay mostrado');
+    CVUploadOverlay.show(
+      context,
+      onRetry: _handleRetry,
+      onPickNew: _handlePickNew,
+      onClose: _handleCloseOverlay,
+    );
+
+    try {
+      AppLogger.info('UploadFlow', '3. POST iniciado');
+      final response = await context.read<MissionActions>().uploadCV(
+            filePath,
+            fileName,
+            onSendProgress: (sent, total) {
+              if (sent == 0) {
+                AppLogger.info('UploadFlow', '4. Primer callback onSendProgress');
+              }
+              if (sent == total) {
+                AppLogger.info('UploadFlow', '5. Último callback (100%)');
+              }
+              uploadProvider.updateDioProgress(sent, total);
+            },
+          );
+
+      AppLogger.info('UploadFlow', '6. Respuesta backend recibida con éxito');
+      AppLogger.info('UploadFlow', '7. Cambio a Fase 2 (Análisis)');
+      uploadProvider.completeTransfer();
+
+      missionProvider.startMonitoring(
+        response.snapshot.mission.id,
+        initialSnapshot: response.snapshot,
+      );
+    } catch (e) {
+      AppLogger.error('UploadFlow', 'Error en el flujo de upload: $e');
+      uploadProvider.setError(
+          'No pudimos conectar con el servidor. Por favor verifica tu conexión.');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Overlay Callbacks — all business decisions live here, not in the overlay
+  // ---------------------------------------------------------------------------
+
+  /// Called when the user taps "Reintentar" inside the error screen.
+  /// The backend guarantees retryMode == RESUME_ALLOWED when this is enabled.
+  Future<void> _handleRetry() async {
+    final uploadProvider = context.read<UploadProvider>();
+    final missionActions = context.read<MissionActions>();
+
+    // Clear error state to go back to progress mode
+    uploadProvider.clearError();
+
+    try {
+      await missionActions.resumeMission();
+    } catch (e) {
+      AppLogger.error('CommandCenter', 'Error al reintentar misión: $e');
+      uploadProvider.setError('No se pudo reintentar. Por favor intenta más tarde.');
+    }
+  }
+
+  /// Called when the user taps "Seleccionar otro CV".
+  /// Detaches the failed mission (keeps it in history), resets the upload
+  /// state, stops monitoring, and opens the FilePicker — all without closing
+  /// the overlay. The overlay returns to progress mode once startUpload() fires.
+  Future<void> _handlePickNew() async {
+    final uploadProvider = context.read<UploadProvider>();
+    final missionProvider = context.read<MissionProvider>();
+    final missionActions = context.read<MissionActions>();
+
+    // 1. Detach failed mission (it stays in history)
+    missionActions.detachCurrentMission();
+    // 2. Stop polling old mission
+    missionProvider.stopMonitoring();
+    // 3. Reset upload visual state
+    uploadProvider.reset();
+
+    // 4. Pick new file
+    AppLogger.info('UploadFlow', '[PickNew] Abriendo FilePicker desde el Overlay...');
+    final result = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf', 'docx'],
+    );
+
+    if (result == null || result.files.isEmpty) {
+      // User cancelled — go back to error state so they can choose again
+      AppLogger.warning('UploadFlow', '[PickNew] FilePicker cancelado por el usuario.');
+      uploadProvider.setError(
+          'Selección cancelada. Puedes elegir otro archivo o cerrar.');
+      return;
+    }
+
+    final file = result.files.single;
+    if (file.path == null) {
+      uploadProvider.setError('No se pudo leer la ruta del archivo seleccionado.');
+      return;
+    }
+
+    // 5. Show confirmation before committing to new mission
+    if (!mounted) return;
+    final confirmed = await _showFileConfirmation(
+      context,
+      fileName: file.name,
+      fileSizeBytes: file.size,
+    );
+
+    if (!confirmed || !mounted) {
+      uploadProvider.setError(
+          'Selección cancelada. Puedes elegir otro archivo o cerrar.');
+      return;
+    }
+
+    // 6. Start the new upload (overlay is still open; startUpload resets it to progress mode)
+    uploadProvider.startUpload(file.path!);
+
+    // Capture providers before the async gap to satisfy use_build_context_synchronously
+    final missionActionsForUpload = context.read<MissionActions>();
+    final missionProviderForUpload = context.read<MissionProvider>();
+
+    try {
+      AppLogger.info('UploadFlow', '[PickNew] POST iniciado con nuevo archivo');
+      final response = await missionActionsForUpload.uploadCV(
+            file.path!,
+            file.name,
+            onSendProgress: (sent, total) {
+              uploadProvider.updateDioProgress(sent, total);
+            },
+          );
+
+      uploadProvider.completeTransfer();
+      missionProviderForUpload.startMonitoring(
+            response.snapshot.mission.id,
+            initialSnapshot: response.snapshot,
+          );
+    } catch (e) {
+      AppLogger.error('UploadFlow', '[PickNew] Error en nuevo upload: $e');
+      uploadProvider.setError(
+          'No pudimos procesar el nuevo archivo. Por favor intenta nuevamente.');
+    }
+  }
+
+  /// Called when the user taps "Cerrar" inside the error screen.
+  /// The overlay is responsible for calling Navigator.pop() after this runs.
+  void _handleCloseOverlay() {
+    final uploadProvider = context.read<UploadProvider>();
+    final missionProvider = context.read<MissionProvider>();
+    final missionActions = context.read<MissionActions>();
+
+    // Detach but do NOT delete — mission stays in history
+    missionActions.detachCurrentMission();
+    missionProvider.stopMonitoring();
+
+    // Full reset so no stale state persists for next session
+    uploadProvider.reset();
+
+    AppLogger.info('CommandCenter', 'Overlay cerrado por el usuario. Misión archivada.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Build
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final colors = context.liaColors;
     final spacings = context.liaSpacings;
 
+    final missionProvider = context.watch<MissionProvider>();
+    final missionActions = context.watch<MissionActions>();
+    final snapshot = missionProvider.snapshot;
+    final hasMission = snapshot != null;
+
     return Scaffold(
       backgroundColor: colors.background,
       body: Stack(
         children: [
-          // Background Gradient subtle
-          Positioned(
-            top: -200,
-            right: -200,
-            child: Container(
-              width: 600,
-              height: 600,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    const Color(0xFF10B981).withAlpha(15), // Emerald Career Agent color
-                    colors.background.withAlpha(0),
-                  ],
-                ),
+          // Dark tech background
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  colors.background,
+                  colors.background.withValues(alpha: 0.95),
+                  const Color(0xFF0D1B2A),
+                ],
               ),
             ),
           ),
-          
-          Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: EdgeInsets.symmetric(horizontal: spacings.xxxl, vertical: spacings.xxxl),
-                  child: Center(
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 1000),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildGreeting(context),
-                          SizedBox(height: spacings.xxxl),
-                          
-                          // Top Section: Live Report + Priorities
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                flex: 6,
-                                child: _buildCareerExecutiveReport(context),
-                              ),
-                              SizedBox(width: spacings.xxl),
-                              Expanded(
-                                flex: 4,
-                                child: Column(
-                                  children: [
-                                    _buildTodayPriorities(context),
-                                    SizedBox(height: spacings.xl),
-                                    _buildAgentInsights(context),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          
-                          SizedBox(height: spacings.xxxl),
-                          
-                          // Middle Section: Professional Tools
-                          _buildProfessionalTools(context),
-                          
-                          SizedBox(height: spacings.xxxl),
-                          
-                          // Bottom Section: Detected Opportunities
-                          _buildDetectedOpportunities(context),
-                          
-                          const SizedBox(height: 100), // Padding for Command Bar
-                        ],
-                      ),
+
+          // Two-column layout
+          Padding(
+            padding: EdgeInsets.all(spacings.xl),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // LEFT COLUMN (35%)
+                Expanded(
+                  flex: 35,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildMissionStatus(context, snapshot),
+                        SizedBox(height: spacings.lg),
+                        _buildRuntimeHealth(context, snapshot),
+                        SizedBox(height: spacings.lg),
+                        _buildCareerHealth(context, snapshot),
+                        SizedBox(height: spacings.lg),
+                        _buildRoadmap(context),
+                      ],
                     ),
                   ),
                 ),
-              ),
-              
-              // Command Bar (Sticky Bottom)
-              _buildCommandBar(context),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGreeting(BuildContext context) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Buenos días, Miguel.',
-          style: typography.display.copyWith(color: colors.textPrimary, fontSize: 40),
-        ),
-        SizedBox(height: spacings.sm),
-        Text(
-          '¿Qué quieres lograr hoy?',
-          style: typography.h2.copyWith(color: colors.textSecondary, fontWeight: FontWeight.normal),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCareerExecutiveReport(BuildContext context) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-    final careerColor = const Color(0xFF10B981);
-
-    return Container(
-      padding: EdgeInsets.all(spacings.xl),
-      decoration: BoxDecoration(
-        color: colors.surface.withAlpha(128),
-        borderRadius: spacings.radiusLg,
-        border: Border.all(color: careerColor.withAlpha(50)),
-        boxShadow: [
-          BoxShadow(
-            color: careerColor.withAlpha(10),
-            blurRadius: 30,
-            spreadRadius: 5,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              AnimatedBuilder(
-                animation: _pulseController,
-                builder: (context, child) {
-                  return Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: careerColor,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: careerColor.withAlpha((_pulseController.value * 128).toInt() + 50),
-                          blurRadius: 10,
-                          spreadRadius: 2,
+                SizedBox(width: spacings.xl),
+                // RIGHT COLUMN (65%)
+                Expanded(
+                  flex: 65,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildMetricsPanel(context, hasMission, missionActions.currentProfile),
+                        SizedBox(height: spacings.lg),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              flex: 1,
+                              child: _buildAgentReadiness(context),
+                            ),
+                            SizedBox(width: spacings.lg),
+                            Expanded(
+                              flex: 1,
+                              child: _buildActivityTimeline(context, snapshot),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  );
-                },
-              ),
-              SizedBox(width: spacings.sm),
-              Text('Career Agent IA', style: typography.h3.copyWith(color: careerColor)),
-            ],
-          ),
-          SizedBox(height: spacings.lg),
-          Text(
-            'Anoche terminé de revisar tu perfil.\n\nEncontré 16 nuevas vacantes.\nDetecté que agregar Docker incrementaría tu ATS un 9%.\n\nMientras dormías también:\n✔ Revisé salarios\n✔ Actualicé tendencias\n✔ Analicé LinkedIn\n\n¿Qué hacemos ahora?',
-            style: typography.bodyLarge.copyWith(color: colors.textPrimary, height: 1.6),
-          ),
-          SizedBox(height: spacings.xl),
-          Wrap(
-            spacing: spacings.sm,
-            runSpacing: spacings.sm,
-            children: [
-              _buildQuickReportButton(context, 'Optimizar CV', Icons.auto_fix_high),
-              _buildQuickReportButton(context, 'Buscar más empleos', Icons.search),
-              _buildQuickReportButton(context, 'Aplicar automáticamente', Icons.send),
-              _buildQuickReportButton(context, 'Preparar entrevista', Icons.mic),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickReportButton(BuildContext context, String text, IconData icon) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: colors.surfaceHover,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: colors.textSecondary),
-          const SizedBox(width: 8),
-          Text(text, style: typography.caption.copyWith(color: colors.textPrimary, fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTodayPriorities(BuildContext context) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-
-    return Container(
-      padding: EdgeInsets.all(spacings.xl),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: spacings.radiusLg,
-        border: Border.all(color: colors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Prioridades de hoy', style: typography.h3.copyWith(color: colors.textPrimary)),
-          SizedBox(height: spacings.lg),
-          _buildPriorityItem(context, 'Mejorar ATS', true),
-          _buildPriorityItem(context, 'Aplicar a Microsoft', false),
-          _buildPriorityItem(context, 'Actualizar LinkedIn', false),
-          _buildPriorityItem(context, 'Practicar entrevista', false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPriorityItem(BuildContext context, String text, bool isDone) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-
-    return Padding(
-      padding: EdgeInsets.only(bottom: spacings.sm),
-      child: Row(
-        children: [
-          Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: isDone ? const Color(0xFF10B981) : colors.border, width: 2),
-              color: isDone ? const Color(0xFF10B981).withAlpha(50) : Colors.transparent,
-            ),
-            child: isDone ? const Icon(Icons.check, size: 12, color: Color(0xFF10B981)) : null,
-          ),
-          SizedBox(width: spacings.sm),
-          Text(
-            text,
-            style: typography.bodyMedium.copyWith(
-              color: isDone ? colors.textSecondary : colors.textPrimary,
-              decoration: isDone ? TextDecoration.lineThrough : null,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAgentInsights(BuildContext context) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-
-    return Container(
-      padding: EdgeInsets.all(spacings.lg),
-      decoration: BoxDecoration(
-        color: colors.accentPrimary.withAlpha(15),
-        borderRadius: spacings.radiusLg,
-        border: Border.all(color: colors.accentPrimary.withAlpha(50)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.insights, color: colors.accentPrimary),
-          SizedBox(width: spacings.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Career Insight', style: typography.caption.copyWith(color: colors.accentPrimary, fontWeight: FontWeight.bold)),
-                SizedBox(height: spacings.xs),
-                Text(
-                  'El mercado Flutter está aumentando un 18%. Te recomiendo priorizar empresas remotas.',
-                  style: typography.bodyMedium.copyWith(color: colors.textPrimary),
+                  ),
                 ),
               ],
             ),
@@ -323,236 +561,615 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> with SingleTi
     );
   }
 
-  Widget _buildProfessionalTools(BuildContext context) {
+  // ---------------------------------------------------------------------------
+  // Dashboard Widgets
+  // ---------------------------------------------------------------------------
+
+  Widget _buildMissionStatus(BuildContext context, dynamic snapshot) {
     final colors = context.liaColors;
     final typography = context.liaTypography;
     final spacings = context.liaSpacings;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Herramientas Profesionales', style: typography.h3.copyWith(color: colors.textPrimary)),
-        SizedBox(height: spacings.lg),
-        Wrap(
-          spacing: spacings.lg,
-          runSpacing: spacings.lg,
+    if (snapshot == null) {
+      return LiaGlassPanel(
+        hasGlow: true,
+        glowColor: colors.accentPrimary,
+        padding: EdgeInsets.all(spacings.xxl),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _buildToolCard(context, 'Crear CV', 'Genera un CV profesional desde cero.', Icons.description),
-            _buildToolCard(context, 'Analizar CV', 'Encuentra áreas de mejora en segundos.', Icons.analytics),
-            _buildToolCard(context, 'Optimizar ATS', 'Ajusta palabras clave para pasar los filtros.', Icons.radar),
-            _buildToolCard(context, 'Buscar Vacantes', 'Rastrea la web buscando tu perfil ideal.', Icons.work),
-            _buildToolCard(context, 'Cover Letter', 'Cartas generadas específicamente por empresa.', Icons.draw),
-            _buildToolCard(context, 'Entrevistas', 'Simulacros con feedback en tiempo real.', Icons.mic),
+            Icon(Icons.rocket_launch, size: 64, color: colors.accentPrimary),
+            SizedBox(height: spacings.lg),
+            Text('Career OS',
+                style: typography.h2.copyWith(color: colors.textPrimary)),
+            SizedBox(height: spacings.sm),
+            Text(
+              'El centro de control de tu carrera profesional. Esperando inicialización.',
+              textAlign: TextAlign.center,
+              style:
+                  typography.bodyMedium.copyWith(color: colors.textSecondary),
+            ),
+            SizedBox(height: spacings.xl),
+            SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: ElevatedButton.icon(
+                onPressed: _pickAndUploadCV,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('SUBIR MI CV',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: colors.accentPrimary,
+                  foregroundColor: colors.background,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: spacings.radiusSm),
+                  elevation: 10,
+                  shadowColor: colors.accentPrimary.withValues(alpha: 0.5),
+                ),
+              ),
+            ),
           ],
         ),
-      ],
-    );
-  }
+      );
+    }
 
-  Widget _buildToolCard(BuildContext context, String title, String desc, IconData icon) {
-    return _HoverableToolCard(
-      title: title,
-      desc: desc,
-      icon: icon,
-    );
-  }
+    final mission = snapshot.mission;
+    final lastEvent = snapshot.timeline.isNotEmpty
+        ? (snapshot.timeline.last.userMessage ?? snapshot.timeline.last.title)
+        : 'Iniciando...';
+    
+    final activeStatuses = const [
+      'CREATED', 'UPLOADING', 'STORED', 'QUEUED', 
+      'PROCESSING', 'WAITING_AGENT', 'RUNNING'
+    ];
+    final isRunning = activeStatuses.contains(mission.status);
+    final isFailed = mission.status == 'FAILED';
 
-  Widget _buildDetectedOpportunities(BuildContext context) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
+    final Color glowColor = isFailed
+        ? colors.error
+        : (isRunning ? colors.accentPrimary : colors.success);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Oportunidades Detectadas', style: typography.h3.copyWith(color: colors.textPrimary)),
-        SizedBox(height: spacings.lg),
-        Row(
-          children: [
-            Expanded(child: _buildOpportunityItem(context, 'Microsoft', 94, true)),
-            SizedBox(width: spacings.lg),
-            Expanded(child: _buildOpportunityItem(context, 'Amazon', 91, false)),
-            SizedBox(width: spacings.lg),
-            Expanded(child: _buildOpportunityItem(context, 'Google', 89, false)),
-            SizedBox(width: spacings.lg),
-            Expanded(child: _buildOpportunityItem(context, 'Oracle', 87, false)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOpportunityItem(BuildContext context, String company, int match, bool isHot) {
-    final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
-
-    return Container(
-      padding: EdgeInsets.all(spacings.lg),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: spacings.radiusLg,
-        border: Border.all(color: isHot ? const Color(0xFFF59E0B).withAlpha(100) : colors.border),
-      ),
+    return LiaGlassPanel(
+      hasGlow: true,
+      glowColor: glowColor,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  if (isHot) const Text('🔥 '),
-                  Text(company, style: typography.h3.copyWith(color: colors.textPrimary, fontSize: 16)),
-                ],
-              ),
-              Text('$match%', style: typography.caption.copyWith(color: isHot ? const Color(0xFFF59E0B) : colors.textSecondary, fontWeight: FontWeight.bold)),
+              Text('MISSION STATUS',
+                  style: typography.caption.copyWith(color: glowColor)),
+              LiaStatusIndicator(
+                  color: glowColor,
+                  label: mission.status,
+                  isPulsing: isRunning),
             ],
           ),
           SizedBox(height: spacings.md),
-          // Mini Match Bar
-          Container(
-            height: 4,
-            decoration: BoxDecoration(
-              color: colors.surfaceHover,
-              borderRadius: BorderRadius.circular(2),
+          Text(mission.currentStep,
+              style: typography.h3.copyWith(color: colors.textPrimary)),
+          SizedBox(height: spacings.sm),
+          Text(
+            lastEvent,
+            style: typography.bodyMedium.copyWith(color: colors.textSecondary),
+          ),
+          if (isFailed && snapshot.availableActions.isNotEmpty) ...[
+            SizedBox(height: spacings.lg),
+            Row(
+              children: [
+                if (snapshot.availableActions.contains('RESTART'))
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _pickAndUploadCV,
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('SUBIR NUEVO CV'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3B82F6),
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                if (snapshot.availableActions.contains('RESTART') &&
+                    snapshot.availableActions.contains('RESUME'))
+                  SizedBox(width: spacings.sm),
+                if (snapshot.availableActions.contains('RESUME'))
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await context.read<MissionActions>().resumeMission();
+                      },
+                      icon: const Icon(Icons.play_arrow, size: 16),
+                      label: const Text('REINTENTAR'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colors.accentPrimary,
+                        foregroundColor: colors.background,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-            child: FractionallySizedBox(
-              widthFactor: match / 100,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: isHot ? const Color(0xFFF59E0B) : colors.textSecondary,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
+          ]
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRuntimeHealth(BuildContext context, dynamic snapshot) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    if (snapshot == null) {
+      return const SizedBox.shrink();
+    }
+
+    final health = snapshot.health;
+    final runtime = snapshot.runtime;
+
+    return LiaGlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('SYSTEM & RUNTIME HEALTH',
+              style: typography.caption.copyWith(color: colors.textMuted)),
+          SizedBox(height: spacings.md),
+          _buildHealthRow(context, 'Mission Runtime', runtime.online),
+          SizedBox(height: spacings.sm),
+          _buildHealthRow(context, 'Database', health.database),
+          SizedBox(height: spacings.sm),
+          _buildHealthRow(context, 'Storage', health.storage),
+          Divider(color: colors.border, height: spacings.xl),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Versión',
+                  style: typography.bodyMedium
+                      .copyWith(color: colors.textSecondary)),
+              Text(health.version,
+                  style: typography.bodyMedium.copyWith(
+                      color: colors.textPrimary,
+                      fontFamily: 'monospace')),
+            ],
+          ),
+          SizedBox(height: spacings.xs),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Agentes Activos',
+                  style: typography.bodyMedium
+                      .copyWith(color: colors.textSecondary)),
+              Text('${runtime.activeAgents.length}',
+                  style: typography.bodyMedium.copyWith(
+                      color: colors.textPrimary,
+                      fontFamily: 'monospace')),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCommandBar(BuildContext context) {
+  Widget _buildHealthRow(
+      BuildContext context, String label, bool isOnline) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Flexible(
+          child: Text(
+            label,
+            style:
+                typography.bodyMedium.copyWith(color: colors.textSecondary),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        LiaStatusIndicator(
+          color: isOnline ? colors.accentPrimary : colors.error,
+          label: isOnline ? 'ONLINE' : 'OFF',
+        ),
+      ],
+    );
+  }
+
+  /// Career health panel with a frozen red bar when the mission has FAILED.
+  /// The bar shows exactly how far the pipeline got before stopping.
+  Widget _buildCareerHealth(BuildContext context, dynamic snapshot) {
     final colors = context.liaColors;
     final typography = context.liaTypography;
     final spacings = context.liaSpacings;
 
-    return Positioned(
-      bottom: spacings.xxl,
-      left: MediaQuery.of(context).size.width / 2 - 350,
-      width: 700,
-      child: Container(
-        height: 56,
-        padding: EdgeInsets.symmetric(horizontal: spacings.lg),
-        decoration: BoxDecoration(
-          color: colors.surface.withAlpha(230),
-          borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: colors.border.withAlpha(100)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withAlpha(100),
-              blurRadius: 30,
-              offset: const Offset(0, 10),
+    final isFailed = snapshot?.mission.status == 'FAILED';
+    final progress =
+        snapshot != null ? snapshot.progress.toDouble() / 100 : 0.0;
+
+    // Frozen progress color: red on failure, accent on running/complete
+    final Color missionBarColor =
+        isFailed ? colors.error : colors.accentPrimary;
+
+    return LiaGlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('CAREER HEALTH',
+              style: typography.caption.copyWith(color: colors.textMuted)),
+          SizedBox(height: spacings.md),
+          LiaProgressBar(
+            progress: progress,
+            color: colors.accentTertiary,
+            label: 'Score General',
+            trailingText: snapshot != null
+                ? 'Calculando...'
+                : 'Esperando primer análisis',
+          ),
+          SizedBox(height: spacings.lg),
+
+          // Mission progress section header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('MISSION PROGRESS',
+                  style: typography.caption.copyWith(color: colors.textMuted)),
+              if (isFailed)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: colors.error.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: colors.error.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.stop_circle_outlined,
+                          color: colors.error, size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        'DETENIDO',
+                        style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                          color: colors.error,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          SizedBox(height: spacings.md),
+
+          // The bar itself — color freezes to red on failure
+          _buildMissionProgressBar(
+            context,
+            progress: progress,
+            color: missionBarColor,
+            isFailed: isFailed,
+            snapshot: snapshot,
+          ),
+
+          if (isFailed) ...[
+            SizedBox(height: spacings.sm),
+            Row(
+              children: [
+                Icon(Icons.info_outline, size: 13, color: colors.error),
+                const SizedBox(width: 6),
+                Text(
+                  'Proceso detenido en ${(progress * 100).toInt()}%',
+                  style: typography.bodyMedium.copyWith(
+                    color: colors.error.withValues(alpha: 0.8),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ],
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.auto_awesome, color: colors.accentPrimary, size: 20),
-            SizedBox(width: spacings.md),
-            Expanded(
-              child: Text(
-                'Pregunta algo...',
-                style: typography.bodyLarge.copyWith(color: colors.textSecondary),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: colors.surfaceHover,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: colors.border),
-              ),
-              child: Text('⌘ K', style: typography.caption.copyWith(color: colors.textSecondary, fontWeight: FontWeight.bold)),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
-}
 
-class _HoverableToolCard extends StatefulWidget {
-  final String title;
-  final String desc;
-  final IconData icon;
+  /// Custom mission progress bar that shows ██████▒▒▒▒ (frozen vs remaining)
+  /// when isFailed is true. Uses LiaProgressBar colors but adds a dimmed
+  /// "remaining" segment so the visual gap is immediately clear.
+  Widget _buildMissionProgressBar(
+    BuildContext context, {
+    required double progress,
+    required Color color,
+    required bool isFailed,
+    required dynamic snapshot,
+  }) {
+    final typography = context.liaTypography;
 
-  const _HoverableToolCard({required this.title, required this.desc, required this.icon});
+    if (!isFailed) {
+      return LiaProgressBar(
+        progress: progress,
+        color: color,
+        label: 'Ejecución de Misión',
+        trailingText: snapshot != null
+            ? '${(progress * 100).toInt()}%'
+            : 'Esperando primera misión',
+      );
+    }
 
-  @override
-  State<_HoverableToolCard> createState() => _HoverableToolCardState();
-}
+    // Failed: show frozen progress + dimmed remaining segment
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Ejecución de Misión',
+                style: typography.bodyMedium
+                    .copyWith(color: context.liaColors.textSecondary)),
+            Text(
+              '${(progress * 100).toInt()}%',
+              style: typography.bodyMedium
+                  .copyWith(color: color, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: SizedBox(
+            height: 8,
+            child: Stack(
+              children: [
+                // Full track (dimmed)
+                Container(
+                  color: color.withValues(alpha: 0.12),
+                ),
+                // Frozen progress
+                FractionallySizedBox(
+                  widthFactor: progress.clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: color,
+                      boxShadow: [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.5),
+                          blurRadius: 6,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-class _HoverableToolCardState extends State<_HoverableToolCard> {
-  bool _isHovered = false;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildRoadmap(BuildContext context) {
     final colors = context.liaColors;
     final typography = context.liaTypography;
     final spacings = context.liaSpacings;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      cursor: SystemMouseCursors.click,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 300,
-        padding: EdgeInsets.all(spacings.lg),
-        decoration: BoxDecoration(
-          color: _isHovered ? colors.surfaceHover : colors.surface,
-          borderRadius: spacings.radiusLg,
-          border: Border.all(color: _isHovered ? colors.border.withAlpha(128) : colors.border.withAlpha(50)),
-          boxShadow: [
-            if (_isHovered)
-              BoxShadow(
-                color: Colors.black.withAlpha(50),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+    return LiaGlassPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('ROADMAP',
+              style: typography.caption.copyWith(color: colors.textMuted)),
+          SizedBox(height: spacings.md),
+          _buildRoadmapItem(context, 'Fase 1: Engine', true, true),
+          _buildRoadmapItem(context, 'Fase 2: Conexión Real', true, true),
+          _buildRoadmapItem(context, 'Fase 3: IA & Agents', false, true),
+          _buildRoadmapItem(context, 'Fase 4: Multi-Agent Comms', false, false),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoadmapItem(
+      BuildContext context, String title, bool isCompleted, bool hasLine) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: isCompleted ? colors.accentPrimary : colors.border,
+                    width: 2),
+                color: isCompleted
+                    ? colors.accentPrimary.withValues(alpha: 0.2)
+                    : Colors.transparent,
+              ),
+            ),
+            if (hasLine)
+              Container(
+                width: 2,
+                height: 24,
+                color: isCompleted
+                    ? colors.accentPrimary.withValues(alpha: 0.5)
+                    : colors.border,
               ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(widget.icon, color: colors.textPrimary, size: 20),
-                SizedBox(width: spacings.sm),
-                Text(widget.title, style: typography.bodyLarge.copyWith(color: colors.textPrimary, fontWeight: FontWeight.bold)),
-              ],
+        SizedBox(width: spacings.md),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              title,
+              style: typography.bodyMedium.copyWith(
+                color: isCompleted ? colors.textPrimary : colors.textMuted,
+              ),
             ),
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: spacings.md),
-              child: Divider(color: colors.border),
-            ),
-            Text(
-              widget.desc,
-              style: typography.bodyMedium.copyWith(color: colors.textSecondary, height: 1.4),
-            ),
-            SizedBox(height: spacings.lg),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Icon(Icons.play_arrow, size: 14, color: _isHovered ? colors.accentPrimary : colors.textMuted),
-                SizedBox(width: 4),
-                Text('Abrir', style: typography.caption.copyWith(color: _isHovered ? colors.accentPrimary : colors.textMuted, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildMetricsPanel(BuildContext context, bool hasMission, dynamic profile) {
+    final spacings = context.liaSpacings;
+    
+    String? atsScore;
+    String? linkedinScore;
+    String? jobMatch;
+    String? skillsCoverage;
+    String? execScore;
+
+    if (profile != null) {
+      atsScore = '${profile.atsMetrics.atsScore}/100';
+      linkedinScore = '${profile.linkedinMetrics.score}/100';
+      jobMatch = profile.careerMetrics.employabilityLevel;
+      skillsCoverage = '${profile.skills.technicalSkills.length} skills';
+      execScore = profile.cvScore != null ? '${profile.cvScore}/100' : 'N/A';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('PANEL DE MÉTRICAS',
+            style: context.liaTypography.caption
+                .copyWith(color: context.liaColors.textMuted)),
+        SizedBox(height: spacings.sm),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                  child:
+                      LiaMetric(title: 'ATS Score', value: atsScore, icon: Icons.document_scanner)),
+              SizedBox(width: spacings.md),
+              Expanded(
+                  child: LiaMetric(
+                      title: 'LinkedIn Score', value: linkedinScore, icon: Icons.work_outline)),
+              SizedBox(width: spacings.md),
+              Expanded(
+                  child:
+                      LiaMetric(title: 'Job Match', value: jobMatch, icon: Icons.pie_chart_outline)),
+              SizedBox(width: spacings.md),
+              Expanded(
+                  child: LiaMetric(
+                      title: 'Skills Coverage',
+                      value: skillsCoverage,
+                      icon: Icons.psychology_outlined)),
+              SizedBox(width: spacings.md),
+              Expanded(
+                  child: LiaMetric(
+                      title: 'CV Score', value: execScore, icon: Icons.star_border)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAgentReadiness(BuildContext context) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    final agents = [
+      'Career Agent',
+      'CV Expert',
+      'ATS Analyzer',
+      'Job Hunter',
+      'LinkedIn Optimizer',
+      'Cover Letter AI',
+      'Interview Coach',
+      'Negotiation Coach'
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('AGENT READINESS',
+            style: typography.caption.copyWith(color: colors.textMuted)),
+        SizedBox(height: spacings.sm),
+        LiaGlassPanel(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: agents.map((agent) {
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: agent == agents.last ? 0 : spacings.sm),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        agent,
+                        style: typography.bodyMedium.copyWith(
+                          color: colors.textPrimary,
+                          fontFamily: 'monospace',
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    LiaStatusIndicator(color: colors.textMuted, label: 'N/A'),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActivityTimeline(BuildContext context, dynamic snapshot) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('ACTIVIDAD DEL SISTEMA',
+            style: typography.caption.copyWith(color: colors.textMuted)),
+        SizedBox(height: spacings.sm),
+        if (snapshot == null || snapshot.timeline.isEmpty)
+          LiaTimeline(
+            items: [
+              LiaTimelineItem(
+                  text: 'Sistema iniciado correctamente.', isCompleted: true),
+              LiaTimelineItem(
+                  text: 'Mission Runtime listo.', isCompleted: true),
+              LiaTimelineItem(
+                  text: 'Esperando primera misión.', isCompleted: false),
+            ],
+          )
+        else
+          LiaTimeline(
+            items: (snapshot.timeline as List).map<LiaTimelineItem>((event) {
+              return LiaTimelineItem(
+                text: event.title,
+                isCompleted: true,
+                stage: event.stage,
+                userMessage: event.userMessage,
+                developerMessage: event.developerMessage,
+                duration: event.duration ?? 0,
+                isError: event.severity == 'error',
+              );
+            }).toList(),
+          )
+      ],
     );
   }
 }

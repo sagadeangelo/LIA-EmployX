@@ -24,10 +24,10 @@ LLM Manager
 Gemma / Qwen
         │
         ▼
-JSON
+JSONParser
         │
         ▼
-Validator
+CVValidator
         │
         ▼
 ProfileMapper
@@ -40,16 +40,20 @@ LIA EmployX Team
 ===============================================================
 """
 
-from .schema_loader import SchemaLoader
-from .prompt_builder import PromptBuilder
-from .validator import CVValidator
+from .cv_section_splitter import CVSectionSplitter
+from .parser_orchestrator import ParserOrchestrator
 from .json_parser import JSONParser
+from .validator import CVValidator
+from .prompt_builder import PromptBuilder
 from .profile_mapper import ProfileMapper
+from .schema_loader import SchemaLoader
 
 __all__ = [
-    "SchemaLoader",
-    "PromptBuilder",
-    "CVValidator",
+    "CVSectionSplitter",
+    "ParserOrchestrator",
     "JSONParser",
+    "CVValidator",
+    "PromptBuilder",
     "ProfileMapper",
-]
+    "SchemaLoader",
+]

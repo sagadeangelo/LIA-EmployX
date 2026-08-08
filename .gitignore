@@ -48,3 +48,29 @@ Thumbs.db
 *.db
 *.db-wal
 *.db-shm
+# ==========================================================
+# LIA EmployX - Local / Generated Data
+# ==========================================================
+
+# User CV uploads
+data/uploads/
+backend/storage/uploads/
+
+# Local runtime data
+backend/data/
+data/
+
+# DOCX extraction / OCR debugging
+debug_docx_media/
+extracted_sections.txt
+raw_text.txt
+raw_text_full.txt
+alt_content_report.txt
+wps_txbx_content.txt
+xml_drawingml_nodes.txt
+xml_text_nodes.txt
+temp_docx_audit.py
+
+# Generated / local test artifacts
+apps/employx_flutter/assets/images/.png
+

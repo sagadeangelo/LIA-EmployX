@@ -20,6 +20,7 @@ from docx import Document
 
 from backend.modules.cv.engine.document_content import DocumentContent
 from backend.modules.cv.engine.readers.base_reader import BaseReader
+from backend.modules.cv.loader.docx_loader import DOCXLoader
 
 
 class DOCXReader(BaseReader):
@@ -55,17 +56,9 @@ class DOCXReader(BaseReader):
         # Texto
         # =====================================================
 
-        paragraphs = []
-
-        for paragraph in document.paragraphs:
-
-            text = paragraph.text.strip()
-
-            if text:
-
-                paragraphs.append(text)
-
-        content.text = "\n".join(paragraphs)
+        # Delegate text extraction to the single permanent DOCX ingestion
+        # engine; this legacy reader remains an adapter for DocumentContent.
+        content.text = DOCXLoader().load(file_path)
 
         # =====================================================
         # Estadísticas

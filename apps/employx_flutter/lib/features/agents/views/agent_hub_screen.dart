@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/lia_theme.dart';
 
-class MarketplaceScreen extends StatefulWidget {
-  const MarketplaceScreen({Key? key}) : super(key: key);
+class AgentHubScreen extends StatefulWidget {
+  const AgentHubScreen({Key? key}) : super(key: key);
 
   @override
-  State<MarketplaceScreen> createState() => _MarketplaceScreenState();
+  State<AgentHubScreen> createState() => _AgentHubScreenState();
 }
 
-class _MarketplaceScreenState extends State<MarketplaceScreen> {
+class _AgentHubScreenState extends State<AgentHubScreen> {
   final List<Map<String, dynamic>> _agents = [
     {
       'title': 'Interview Coach',
@@ -98,16 +98,24 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   ],
                 ),
                 SizedBox(height: spacings.xxl),
-                _buildCategoryItem(context, 'Todos los Agentes', Icons.apps, true),
-                _buildCategoryItem(context, 'Aplicación & CV', Icons.document_scanner, false),
-                _buildCategoryItem(context, 'Entrevistas', Icons.mic, false),
-                _buildCategoryItem(context, 'Networking', Icons.people, false),
-                _buildCategoryItem(context, 'Legal & Visas', Icons.gavel, false),
-                _buildCategoryItem(context, 'Negociación', Icons.monetization_on, false),
-                
-                const Spacer(),
-                
-                // Saldo IA
+                // Lista de categorías scrollable
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildCategoryItem(context, 'Todos los Agentes', Icons.apps, true),
+                        _buildCategoryItem(context, 'Aplicación & CV', Icons.document_scanner, false),
+                        _buildCategoryItem(context, 'Entrevistas', Icons.mic, false),
+                        _buildCategoryItem(context, 'Networking', Icons.people, false),
+                        _buildCategoryItem(context, 'Legal & Visas', Icons.gavel, false),
+                        _buildCategoryItem(context, 'Negociación', Icons.monetization_on, false),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(height: spacings.md),
+                // Saldo IA — siempre visible al fondo
                 Container(
                   padding: EdgeInsets.all(spacings.md),
                   decoration: BoxDecoration(

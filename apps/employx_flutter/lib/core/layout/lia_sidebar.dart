@@ -79,46 +79,60 @@ class LiaSidebar extends StatelessWidget {
                   onTap: () => onItemSelected(0),
                 ),
                 _SidebarItem(
-                  icon: Icons.flag_outlined,
-                  label: 'Objetivo Profesional',
+                  icon: Icons.person_outline,
+                  label: 'Perfil Profesional',
                   isSelected: selectedIndex == 1,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(1),
                 ),
                 _SidebarItem(
-                  icon: Icons.rocket_launch,
-                  label: 'Mission Center',
+                  icon: Icons.flag_outlined,
+                  label: 'Objetivo Profesional',
                   isSelected: selectedIndex == 2,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(2),
                 ),
                 _SidebarItem(
-                  icon: Icons.storefront,
-                  label: 'Agent Hub',
+                  icon: Icons.timeline,
+                  label: 'Mission Timeline',
                   isSelected: selectedIndex == 3,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(3),
                 ),
                 _SidebarItem(
-                  icon: Icons.description_outlined,
-                  label: 'Mis CVs',
+                  icon: Icons.rocket_launch,
+                  label: 'Mission Center',
                   isSelected: selectedIndex == 4,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(4),
                 ),
                 _SidebarItem(
-                  icon: Icons.work_outline,
-                  label: 'Vacantes',
+                  icon: Icons.storefront,
+                  label: 'Agent Hub',
                   isSelected: selectedIndex == 5,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(5),
                 ),
                 _SidebarItem(
-                  icon: Icons.dashboard_outlined,
-                  label: 'Dashboard',
+                  icon: Icons.library_books,
+                  label: 'Knowledge Base',
                   isSelected: selectedIndex == 6,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(6),
+                ),
+                _SidebarItem(
+                  icon: Icons.work_outline,
+                  label: 'Vacantes',
+                  isSelected: selectedIndex == 7,
+                  isCollapsed: isCollapsed,
+                  onTap: () => onItemSelected(7),
+                ),
+                _SidebarItem(
+                  icon: Icons.dashboard_outlined,
+                  label: 'Dashboard',
+                  isSelected: selectedIndex == 8,
+                  isCollapsed: isCollapsed,
+                  onTap: () => onItemSelected(8),
                 ),
               ],
             ),
@@ -188,7 +202,7 @@ class _SidebarItemState extends State<_SidebarItem> {
 
     final Color bgColor = widget.isSelected 
         ? colors.surfaceHover 
-        : (_isHovered ? colors.surfaceHover.withOpacity(0.5) : Colors.transparent);
+        : (_isHovered ? colors.surfaceHover.withValues(alpha: 0.5) : Colors.transparent);
     
     final Color iconColor = widget.isSelected 
         ? colors.textPrimary 

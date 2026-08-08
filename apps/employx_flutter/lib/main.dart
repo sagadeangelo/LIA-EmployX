@@ -1,20 +1,35 @@
 import 'package:flutter/material.dart';
 
+import 'package:provider/provider.dart';
+
 import 'core/theme/lia_theme.dart';
 import 'core/layout/main_layout.dart';
+import 'core/di/service_locator.dart';
+import 'core/actions/mission_actions.dart';
+import 'core/actions/command_actions.dart';
+import 'core/actions/system_actions.dart';
 
 import 'features/dashboard/views/command_center_screen.dart';
-import 'features/dashboard/views/professional_goal_screen.dart';
-import 'features/agents/views/mission_center_screen.dart';
-import 'features/agents/views/marketplace_screen.dart';
-import 'features/cvs/views/my_cvs_screen.dart';
-import 'features/vacancies/views/vacancies_screen.dart';
-import 'features/dashboard/views/dashboard_screen.dart';
+import 'features/profile/views/professional_profile_screen.dart';
+import 'core/ui/feature_in_progress.dart';
+import 'core/providers/mission_provider.dart';
+import 'core/providers/upload_provider.dart';
 
 void main() {
-  // Asegurar que las fuentes se cargan
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const LiaEmployXApp());
+  setupServiceLocator();
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => sl<MissionActions>()),
+        ChangeNotifierProvider(create: (_) => sl<CommandActions>()),
+        ChangeNotifierProvider(create: (_) => sl<SystemActions>()),
+        ChangeNotifierProvider(create: (_) => sl<MissionProvider>()),
+        ChangeNotifierProvider(create: (_) => sl<UploadProvider>()),
+      ],
+      child: const LiaEmployXApp(),
+    ),
+  );
 }
 
 class LiaEmployXApp extends StatelessWidget {
@@ -42,13 +57,15 @@ class _AppRootState extends State<_AppRoot> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
-    CommandCenterScreen(),       // 0 - Centro de Comando
-    ProfessionalGoalScreen(),    // 1 - Objetivo Profesional
-    MissionCenterScreen(),       // 2 - Mission Center (NASA)
-    MarketplaceScreen(),         // 3 - Agent Hub
-    MyCvsScreen(),               // 4 - Mis CVs
-    VacanciesScreen(),           // 5 - Vacantes
-    DashboardScreen(),           // 6 - Dashboard
+    CommandCenterScreen(),                                      // 0 - Centro de Comando
+    ProfessionalProfileScreen(),                                // 1 - Perfil Profesional
+    FeatureInProgressWidget(featureName: 'Objetivo Profesional'), // 2
+    FeatureInProgressWidget(featureName: 'Mission Timeline'),     // 3
+    FeatureInProgressWidget(featureName: 'Mission Center'),       // 4
+    FeatureInProgressWidget(featureName: 'Agent Hub'),            // 5
+    FeatureInProgressWidget(featureName: 'Knowledge Base'),       // 6
+    FeatureInProgressWidget(featureName: 'Vacantes'),             // 7
+    FeatureInProgressWidget(featureName: 'Dashboard'),            // 8
   ];
 
   @override
