@@ -1,33 +1,12 @@
-<p align="center">
-  <img src="apps/employx_flutter/assets/images/logo.png" width="800" alt="LIA-EmployX">
-</p>
-
-<h1 align="center">
-LIA-EmployX
-</h1>
-
-<p align="center">
-<b>The AI Career Operating System</b>
-</p>
-
-<p align="center">
-Autonomous AI Agents working together to help you land your ideal job.
-</p>
-
-<p align="center">
-
-![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?logo=flutter&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
-![Windows](https://img.shields.io/badge/Desktop-Windows-0078D6?logo=windows)
-![AI Agents](https://img.shields.io/badge/AI-Multi--Agent-7B61FF)
-![License](https://img.shields.io/badge/License-MIT-green)
-
-</p>
-
----
-
 # 🚀 The AI Career Operating System
+
+<p align="center">
+  <img src="apps/employx_flutter/assets/images/lia_employx_video_cover.png" alt="LIA-EmployX - The AI Career Operating System" width="100%">
+</p>
+
+<p align="center">
+  <strong>Your Career. Our AI. Your Future.</strong>
+</p>
 
 LIA-EmployX is a next-generation AI platform that transforms job searching into an autonomous, intelligent workflow.
 
@@ -101,7 +80,7 @@ Your autonomous recruiter.
 # 🚀 Upcoming AI Agents
 
 | Agent | Purpose |
-|--------|----------|
+|---|---|
 | 🎤 Interview Coach | AI interview simulator |
 | 💰 Salary Negotiator | Salary negotiation assistant |
 | 🌍 Visa Advisor | Immigration & relocation |
@@ -135,7 +114,7 @@ Your autonomous recruiter.
 
 # 🏗️ System Architecture
 
-```
+```text
                     Mission Center
                            │
         ┌──────────────────┼──────────────────┐
@@ -155,165 +134,3 @@ Your autonomous recruiter.
                   Local AI Models
                      NVIDIA NIM
                     FastAPI Backend
-```
-
----
-
-# 🎯 Mission Center
-
-Unlike traditional AI assistants, LIA-EmployX allows multiple AI Agents to collaborate simultaneously.
-
-Each agent continuously executes specialized tasks while reporting progress to the Mission Center.
-
-Examples:
-
-- Improve ATS Score
-- Detect missing skills
-- Search remote jobs
-- Analyze salaries
-- Rewrite resume
-- Prepare interviews
-- Generate Cover Letters
-
----
-
-# 🛒 AI Marketplace
-
-Expand your AI team by installing specialized agents.
-
-Examples:
-
-- Interview Coach
-- Visa Advisor
-- LinkedIn Networker
-- Salary Negotiator
-- Remote Hunter
-- Email Assistant
-- WhatsApp Assistant
-- Market Analyst
-
-Every agent extends the capabilities of the operating system.
-
----
-
-# 🛠️ Technology Stack
-
-## Frontend
-
-- Flutter
-- Material 3
-- Desktop-first UI
-- Glassmorphism
-- Custom Design System
-
-## Backend
-
-- Python
-- FastAPI
-- SQLite
-- Modular Architecture
-
-## Artificial Intelligence
-
-- Multi-Agent System
-- Local LLM Support
-- NVIDIA NIM
-- Event Bus Architecture
-- Autonomous AI Coordination
-
----
-
-# 🎨 UI / UX Philosophy
-
-LIA-EmployX is inspired by modern premium software including:
-
-- Linear
-- Cursor
-- Raycast
-- Notion
-- Arc Browser
-
-The objective is to create software that feels less like an application...
-
-…and more like an intelligent operating system.
-
----
-
-# 📸 Preview
-
-> Screenshots coming soon.
-
-Future sections will showcase:
-
-- Home Command Center
-- Mission Center
-- AI Marketplace
-- AI Team Dashboard
-- Resume Analyzer
-- Job Search Dashboard
-
----
-
-# 🗺️ Development Roadmap
-
-## Phase 1
-
-- ✅ Design System
-- ✅ Desktop UI
-- ✅ AI Marketplace
-- ✅ Mission Center
-- ✅ Core AI Agents
-- ✅ Multi-Agent Architecture
-
-## Phase 2
-
-- 🚧 Resume Parser
-- 🚧 ATS Optimization Engine
-- 🚧 Job Matching Engine
-- 🚧 Interview Simulator
-- 🚧 Career Analytics
-
-## Phase 3
-
-- ⏳ NVIDIA NIM Integration
-- ⏳ Local LLM Runtime
-- ⏳ Email Automation
-- ⏳ LinkedIn Automation
-- ⏳ WhatsApp Automation
-- ⏳ Cloud Synchronization
-
----
-
-# 🤝 Contributing
-
-Contributions, ideas, bug reports and feature requests are always welcome.
-
-If you'd like to help build the future of AI-powered career development, feel free to open an Issue or submit a Pull Request.
-
----
-
-# 📄 License
-
-Licensed under the MIT License.
-
----
-
-<p align="center">
-
-# LIA-EmployX
-
-### The AI Career Operating System
-
-### Your Career. Our AI. Your Future.
-
-</p>
-
----
-
-<p align="center">
-Made with ❤️ using Flutter, Python and Artificial Intelligence.
-</p>
-
-<p align="center">
-© 2026 LIA Project. All rights reserved.
-</p>
