@@ -1,108 +1,453 @@
+from __future__ import annotations
+
 import re
 from typing import List
-from backend.modules.cv.builders.base_builder import BaseBuilder, BuildResult
-from backend.modules.cv.models.cv_experience import CVExperience
 
-from backend.modules.cv.drafts.experience_draft import ExperienceDraft
-from backend.modules.cv.normalizers.experience_normalizer import ExperienceNormalizer
+from backend.modules.cv.builders.base_builder import (
+    BaseBuilder,
+    BuildResult,
+)
+from backend.modules.cv.drafts.experience_draft import (
+    ExperienceDraft,
+)
+from backend.modules.cv.models.cv_experience import (
+    CVExperience,
+)
+from backend.modules.cv.normalizers.experience_normalizer import (
+    ExperienceNormalizer,
+)
 
-class ExperienceBuilder(BaseBuilder[List[CVExperience]]):
-    def build(self, text: str) -> BuildResult[List[CVExperience]]:
-        warnings = []
-        confidence = 0.0
-        if not text.strip():
-            warnings.append("Sección de experiencia vacía.")
-            return BuildResult(data=[], confidence=0.0, warnings=warnings)
-            
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        
-        date_pattern = re.compile(r"((?:19|20)\d{2})\s*[-–—a]\s*((?:19|20)\d{2}|presente|actualidad|present|now|current)", re.IGNORECASE)
-        
-        def is_header(l: str) -> bool:
-            clean = re.sub(r'[^a-z]', '', l.lower())
-            return clean in ("experience", "featuredexperience", "workexperience", "experiencia", "experienciaprofesional", "professionalexperience")
-            
-        blocks = []
-        current_block = []
-        
-        for line in lines:
-            if is_header(line):
-                continue
-                
-            is_date_line = bool(date_pattern.search(line))
-            
-            if is_date_line:
-                if current_block:
-                    # The line immediately before the date line usually belongs to the new experience (Position)
-                    prev_line = current_block.pop()
-                    if current_block:
-                        blocks.append(current_block)
-                    current_block = [prev_line, line]
-                else:
-                    current_block.append(line)
+
+class ExperienceBuilder(
+    BaseBuilder[List[CVExperience]]
+):
+    """
+    Builds structured work experiences from the CV experience section.
+
+    The parser is anchor-based.
+
+    A date range marks the end of the header of an experience:
+
+        Position
+        Company
+        2025 – Present
+
+        Description...
+
+    The two meaningful lines immediately before the date are interpreted
+    as:
+
+        position
+        company
+
+    Decorative labels such as:
+
+        DESTACADA
+        FEATURED
+
+    are ignored.
+
+    This approach is intentionally based on the structure of the user's
+    CV rather than attempting to infer arbitrary company/position
+    relationships from punctuation.
+    """
+
+    # ==========================================================
+    # DATE PATTERN
+    # ==========================================================
+
+    _DATE_PATTERN = re.compile(
+        r"(?P<start>(?:19|20)\d{2})"
+        r"\s*"
+        r"(?:-|–|—|a|al)"
+        r"\s*"
+        r"(?P<end>"
+        r"(?:19|20)\d{2}"
+        r"|presente"
+        r"|actualidad"
+        r"|actual"
+        r"|present"
+        r"|now"
+        r"|current"
+        r")",
+        re.IGNORECASE,
+    )
+
+    # ==========================================================
+    # DECORATIVE / NON-DATA LINES
+    # ==========================================================
+
+    _IGNORED_LABELS = {
+        "destacada",
+        "featured",
+        "featured experience",
+        "experiencia destacada",
+        "work experience",
+        "professional experience",
+        "experience",
+        "experiencia",
+        "experiencia profesional",
+    }
+
+    # ==========================================================
+    # BUILD
+    # ==========================================================
+
+    def build(
+        self,
+        text: str,
+    ) -> BuildResult[List[CVExperience]]:
+
+        warnings: list[str] = []
+
+        if not text or not text.strip():
+            warnings.append(
+                "Sección de experiencia vacía."
+            )
+
+            return BuildResult(
+                data=[],
+                confidence=0.0,
+                warnings=warnings,
+            )
+
+        lines = self._clean_lines(text)
+
+        if not lines:
+            warnings.append(
+                "No se encontraron líneas válidas en experiencia."
+            )
+
+            return BuildResult(
+                data=[],
+                confidence=0.0,
+                warnings=warnings,
+            )
+
+        # ======================================================
+        # FIND DATE ANCHORS
+        # ======================================================
+
+        date_indexes: list[
+            tuple[int, re.Match[str]]
+        ] = []
+
+        for index, line in enumerate(lines):
+
+            match = self._DATE_PATTERN.search(
+                line
+            )
+
+            if match:
+                date_indexes.append(
+                    (index, match)
+                )
+
+        if not date_indexes:
+            warnings.append(
+                "No se encontraron anclas de fecha en experiencia."
+            )
+
+            return BuildResult(
+                data=[],
+                confidence=40.0,
+                warnings=warnings,
+            )
+
+        experiences: list[CVExperience] = []
+
+        seen_drafts: set[
+            tuple[str, str, str, str]
+        ] = set()
+
+        confidence_values: list[float] = []
+
+        # ======================================================
+        # BUILD ONE EXPERIENCE PER DATE ANCHOR
+        # ======================================================
+
+        for anchor_position, (
+            date_index,
+            date_match,
+        ) in enumerate(date_indexes):
+
+            # --------------------------------------------------
+            # DATE VALUES
+            # --------------------------------------------------
+
+            start_date = (
+                date_match.group("start")
+            )
+
+            end_date = (
+                date_match.group("end")
+            )
+
+            # --------------------------------------------------
+            # HEADER RANGE
+            #
+            # Everything after the previous date anchor and
+            # before this date belongs to the current header.
+            # --------------------------------------------------
+
+            previous_date_index = (
+                date_indexes[
+                    anchor_position - 1
+                ][0]
+                if anchor_position > 0
+                else -1
+            )
+
+            header_lines = lines[
+                previous_date_index + 1:
+                date_index
+            ]
+
+            header_lines = [
+                line
+                for line in header_lines
+                if not self._is_ignored_label(
+                    line
+                )
+            ]
+
+            # --------------------------------------------------
+            # DESCRIPTION RANGE
+            # --------------------------------------------------
+
+            next_date_index = (
+                date_indexes[
+                    anchor_position + 1
+                ][0]
+                if anchor_position
+                + 1
+                < len(date_indexes)
+                else len(lines)
+            )
+
+            description_lines = lines[
+                date_index + 1:
+                next_date_index
+            ]
+
+            # --------------------------------------------------
+            # EXTRACT POSITION / COMPANY
+            #
+            # For the CV structure:
+            #
+            # Position
+            # Company
+            # Date
+            #
+            # the final two meaningful header lines are used.
+            # --------------------------------------------------
+
+            position = ""
+            company = ""
+
+            if len(header_lines) >= 2:
+
+                position = header_lines[-2]
+                company = header_lines[-1]
+
+            elif len(header_lines) == 1:
+
+                # Conservative fallback.
+                position = header_lines[0]
+                company = ""
+
+            # --------------------------------------------------
+            # If company/position are reversed in a future CV,
+            # the explicit pattern can be adapted here without
+            # touching the normalizer.
+            # --------------------------------------------------
+
+            position = self._clean_value(
+                position
+            )
+
+            company = self._clean_value(
+                company
+            )
+
+            # --------------------------------------------------
+            # BUILD NORMALIZER INPUT
+            #
+            # IMPORTANT:
+            #
+            # "|" is safe as an internal separator.
+            #
+            # "-" is NOT used because:
+            #
+            #     LIA-Tech
+            #
+            # must remain intact.
+            # --------------------------------------------------
+
+            if company and position:
+
+                title_line = (
+                    f"{company} | {position}"
+                )
+
+            elif position:
+
+                title_line = position
+
+            elif company:
+
+                title_line = company
+
             else:
-                current_block.append(line)
-                
-        if current_block:
-            blocks.append(current_block)
-            
-        experiences = []
-        
-        # Deduplication tracker
-        seen_drafts = set()
-        
-        for block_lines in blocks:
-            if not block_lines:
-                continue
-                
-            title_line = block_lines[0]
-            date_line = ""
-            start_date = ""
-            end_date = ""
-            
-            # Check if line 0 or 1 has dates
-            date_match = date_pattern.search(title_line)
-            if date_match:
-                start_date = date_match.group(1)
-                end_date = date_match.group(2)
-                # Keep title_line as is, normalizer will handle
-            elif len(block_lines) > 1:
-                date_line = block_lines[1]
-                date_match = date_pattern.search(date_line)
-                if date_match:
-                    start_date = date_match.group(1)
-                    end_date = date_match.group(2)
-                    
-                    company_str = date_line[:date_match.start()].strip()
-                    # Clean up trailing punctuation if any
-                    company_str = re.sub(r'[-–—\|,]$', '', company_str).strip()
-                    
-                    if company_str:
-                        # Prevent normalizer from splitting inside the company name
-                        company_safe = re.sub(r'[-–—\|]', ' ', company_str)
-                        title_line = f"{company_safe} | {title_line}"
-                    
-            desc_start = 2 if (date_line and date_match) else 1
-            description = "\n".join(block_lines[desc_start:])
-            
-            draft_key = (title_line, start_date, end_date, description)
+
+                title_line = "Desconocido"
+
+            description = "\n".join(
+                description_lines
+            ).strip()
+
+            draft_key = (
+                title_line,
+                start_date,
+                end_date,
+                description,
+            )
+
             if draft_key in seen_drafts:
                 continue
-            seen_drafts.add(draft_key)
-            
+
+            seen_drafts.add(
+                draft_key
+            )
+
             draft = ExperienceDraft(
                 raw_title_line=title_line,
                 raw_start_date=start_date,
                 raw_end_date=end_date,
-                raw_description=description
+                raw_description=description,
             )
-            
-            norm_res = ExperienceNormalizer.normalize(draft)
-            experiences.append(norm_res.data)
-            confidence += norm_res.confidence
-            warnings.extend(norm_res.warnings)
-            
-        final_confidence = (confidence / len(experiences)) if experiences else 40.0
-        warnings.append("Agrupación por anclas de fecha aplicada.")
-        
-        return BuildResult(data=experiences, confidence=final_confidence, warnings=warnings)
+
+            normalization = (
+                ExperienceNormalizer.normalize(
+                    draft
+                )
+            )
+
+            experiences.append(
+                normalization.data
+            )
+
+            confidence_values.append(
+                normalization.confidence
+            )
+
+            warnings.extend(
+                normalization.warnings
+            )
+
+        # ======================================================
+        # FINAL RESULT
+        # ======================================================
+
+        if not experiences:
+
+            warnings.append(
+                "No se pudieron construir experiencias."
+            )
+
+            return BuildResult(
+                data=[],
+                confidence=0.0,
+                warnings=warnings,
+            )
+
+        final_confidence = (
+            sum(confidence_values)
+            / len(confidence_values)
+        )
+
+        warnings.append(
+            "Agrupación por anclas de fecha aplicada."
+        )
+
+        return BuildResult(
+            data=experiences,
+            confidence=final_confidence,
+            warnings=warnings,
+        )
+
+    # ==========================================================
+    # HELPERS
+    # ==========================================================
+
+    @classmethod
+    def _clean_lines(
+        cls,
+        text: str,
+    ) -> list[str]:
+
+        text = text.replace(
+            "\r\n",
+            "\n",
+        )
+
+        text = text.replace(
+            "\r",
+            "\n",
+        )
+
+        lines: list[str] = []
+
+        for raw_line in text.split("\n"):
+
+            line = (
+                raw_line or ""
+            ).strip()
+
+            if not line:
+                continue
+
+            line = re.sub(
+                r"\s+",
+                " ",
+                line,
+            )
+
+            if not line:
+                continue
+
+            lines.append(line)
+
+        return lines
+
+    @classmethod
+    def _is_ignored_label(
+        cls,
+        value: str,
+    ) -> bool:
+
+        normalized = (
+            value or ""
+        ).strip().casefold()
+
+        return (
+            normalized
+            in cls._IGNORED_LABELS
+        )
+
+    @staticmethod
+    def _clean_value(
+        value: str,
+    ) -> str:
+
+        value = (
+            value or ""
+        ).strip()
+
+        value = re.sub(
+            r"\s+",
+            " ",
+            value,
+        )
+
+        return value.strip()

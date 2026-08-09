@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends
+﻿from fastapi import APIRouter, UploadFile, File, Form, Depends
 from typing import Optional
 
 from backend.modules.cv.services.cv_service import CVService
@@ -16,7 +16,7 @@ from backend.modules.cv.models.upload_response import UploadMissionResponse
 from backend.modules.mission.models import MissionSnapshot, RuntimeStatus, SystemHealth
 
 
-# Dependency Injection — wired to the global RuntimeRegistry initialized at lifespan
+# Dependency Injection â€” wired to the global RuntimeRegistry initialized at lifespan
 def get_cv_service() -> CVService:
     storage = JsonStorageProvider()
     mission_repo = MissionRepository(storage)
@@ -44,20 +44,20 @@ async def upload_cv(
     cv_service: CVService = Depends(get_cv_service)
 ):
     """
-    Endpoint que coordina la carga de un CV, lo procesa mediante el CVService y notifica a la Misión.
+    Endpoint que coordina la carga de un CV, lo procesa mediante el CVService y notifica a la MisiÃ³n.
     """
     start_time = AppLogger.get_time_ms()
-    AppLogger.info("Backend", "Petición POST /api/v1/cv/upload recibida", mission_id=mission_id)
+    AppLogger.info("Backend", "PeticiÃ³n POST /api/v1/cv/upload recibida", mission_id=mission_id)
     
     if not file:
-        AppLogger.error("Backend", "Error: No se recibió ningún UploadFile", mission_id=mission_id)
+        AppLogger.error("Backend", "Error: No se recibiÃ³ ningÃºn UploadFile", mission_id=mission_id)
         return {"status": "error", "message": "No file"}
 
     file_bytes = await file.read()
     
-    AppLogger.info("Backend", f"Archivo recibido en FastAPI: nombre: {file.filename}, tamaño: {len(file_bytes)} bytes, Content-Type: {file.content_type}", mission_id=mission_id)
+    AppLogger.info("Backend", f"Archivo recibido en FastAPI: nombre: {file.filename}, tamaÃ±o: {len(file_bytes)} bytes, Content-Type: {file.content_type}", mission_id=mission_id)
     
-    # Delegar lógica al CVService (Solo guarda y encola)
+    # Delegar lÃ³gica al CVService (Solo guarda y encola)
     AppLogger.info("Backend", "Delegando a CVService.process_uploaded_cv...", mission_id=mission_id)
     
     mission = cv_service.process_uploaded_cv(
@@ -89,6 +89,10 @@ async def upload_cv(
         retryMode=cv_service.mission_controller.get_retry_mode(mission),
     )
     
-    response = UploadMissionResponse(snapshot=snapshot)
+    response = UploadMissionResponse(
+    snapshot=snapshot,
+    cv=cv_service.last_document,
+)
     
     return response
+

@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import '../theme/lia_theme.dart';
 import 'lia_glass_panel.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class LiaTimelineItem {
   final String text;
@@ -123,7 +122,7 @@ class LiaTimeline extends StatelessWidget {
                                 Tooltip(
                                   message: item.developerMessage ?? '',
                                   child: Text(
-                                    'Ver detalles técnicos',
+                                    'Ver detalles tÃ©cnicos',
                                     style: typography.caption.copyWith(color: colors.accentTertiary, decoration: TextDecoration.underline),
                                   ),
                                 ),
@@ -143,3 +142,4 @@ class LiaTimeline extends StatelessWidget {
     );
   }
 }
+

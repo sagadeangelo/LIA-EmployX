@@ -1,40 +1,56 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import '../models/mission_model.dart';
-import '../repositories/mission_repository.dart';
-import '../repositories/cv_repository.dart';
-import '../utils/app_logger.dart';
-import '../models/upload_mission_response.dart';
-import '../models/professional_profile_model.dart';
+
 import '../api/api_client.dart';
+import '../models/mission_model.dart';
+import '../models/professional_profile_model.dart';
+import '../models/upload_mission_response.dart';
+import '../repositories/cv_repository.dart';
+import '../repositories/mission_repository.dart';
 import '../repositories/profile_repository.dart';
+import '../utils/app_logger.dart';
 
 class MissionActions extends ChangeNotifier {
   final MissionRepository _missionRepository;
-  final CVRepository _cvRepository = CVRepository();
-  final ProfileRepository _profileRepository = ProfileRepository();
+  final CVRepository _cvRepository;
+  final ProfileRepository _profileRepository;
 
   MissionModel? _currentMission;
   ProfessionalProfile? _currentProfile;
+
   bool _isLoading = false;
   String? _error;
+
   Timer? _pollTimer;
 
-  MissionActions(this._missionRepository);
+  MissionActions(
+    this._missionRepository, {
+    CVRepository? cvRepository,
+    ProfileRepository? profileRepository,
+  })  : _cvRepository =
+            cvRepository ?? CVRepository(),
+        _profileRepository =
+            profileRepository ?? ProfileRepository();
 
-  MissionModel? get currentMission => _currentMission;
-  ProfessionalProfile? get currentProfile => _currentProfile;
+  MissionModel? get currentMission =>
+      _currentMission;
+
+  ProfessionalProfile? get currentProfile =>
+      _currentProfile;
+
   bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get hasMission => _currentMission != null;
 
-  /// Detaches the current mission from the active state without deleting it.
-  /// The mission remains in the backend history (auditable), but Flutter
-  /// treats it as no longer "live". Use before starting a new upload flow.
+  String? get error => _error;
+
+  bool get hasMission =>
+      _currentMission != null;
+
   void detachCurrentMission() {
     _currentMission = null;
     _currentProfile = null;
     _error = null;
+
     notifyListeners();
   }
 
@@ -43,81 +59,169 @@ class MissionActions extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> loadActiveMission({bool silent = false}) async {
-    if (!silent) _setLoading(true);
+  void _setLoading(bool value) {
+    if (_isLoading == value) {
+      return;
+    }
+
+    _isLoading = value;
+    notifyListeners();
+  }
+
+  Future<void> loadActiveMission({
+    bool silent = false,
+  }) async {
+    if (!silent) {
+      _setLoading(true);
+    }
+
     try {
-      final missions = await _missionRepository.getActiveMissions();
+      final missions =
+          await _missionRepository
+              .getActiveMissions();
+
       if (missions.isNotEmpty) {
-        _currentMission = missions.first;
-        if (_currentMission?.profileId != null) {
-          _currentProfile = await _profileRepository.getProfile(_currentMission!.profileId!);
+        _currentMission =
+            missions.first;
+
+        final profileId =
+            _currentMission?.profileId;
+
+        if (profileId != null &&
+            profileId.isNotEmpty) {
+          _currentProfile =
+              await _profileRepository
+                  .getProfile(profileId);
+        } else {
+          _currentProfile = null;
         }
       } else {
         _currentMission = null;
         _currentProfile = null;
       }
+
       _error = null;
     } catch (e) {
-      if (!silent) _error = e.toString();
+      if (!silent) {
+        _error = e.toString();
+      }
+
+      AppLogger.error(
+        'Mission',
+        'Error cargando misión activa',
+        error: e,
+      );
     } finally {
-      if (!silent) _setLoading(false);
+      if (!silent) {
+        _setLoading(false);
+      }
     }
   }
 
-  Future<void> createMission(Map<String, dynamic> data) async {
+  Future<void> createMission(
+    Map<String, dynamic> data,
+  ) async {
     _setLoading(true);
-    final startTime = DateTime.now();
+
     try {
-      AppLogger.info('Mission', 'Creando nueva misión...');
-      _currentMission = await _missionRepository.createMission(data);
-      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
-      AppLogger.info('Mission', 'Misión creada exitosamente', missionId: _currentMission?.id, durationMs: durationMs);
+      AppLogger.info(
+        'Mission',
+        'Creando nueva misión...',
+      );
+
+      _currentMission =
+          await _missionRepository
+              .createMission(data);
+
       _error = null;
+
+      notifyListeners();
     } catch (e) {
-      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
-      AppLogger.error('Mission', 'Error al crear misión', durationMs: durationMs, error: e);
       _error = e.toString();
+
+      notifyListeners();
+
       rethrow;
     } finally {
       _setLoading(false);
     }
   }
 
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
-  }
-
   Future<bool> pingServer() async {
     final client = ApiClient();
-    return await client.ping();
+
+    return client.ping();
   }
 
-  Future<UploadMissionResponse> uploadCV(String filePath, String fileName, {void Function(int, int)? onSendProgress}) async {
+  Future<UploadMissionResponse> uploadCV(
+    String filePath,
+    String fileName, {
+    String? missionId,
+    void Function(int sent, int total)?
+        onSendProgress,
+  }) async {
     _setLoading(true);
+
     final startTime = DateTime.now();
+
     try {
-      AppLogger.info('Mission', 'Iniciando upload de CV al repository (Backend creará la misión)');
-      
-      final response = await _cvRepository.uploadCV(
-        filePath, 
-        fileName, 
+      AppLogger.info(
+        'Mission',
+        'Iniciando upload de CV al backend...',
+        missionId: missionId,
+      );
+
+      final response =
+          await _cvRepository.uploadCV(
+        filePath,
+        fileName,
+        missionId: missionId,
         onSendProgress: onSendProgress,
       );
-      
-      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
-      AppLogger.info('Mission', 'Upload completado, Backend retornó Mission ID: ${response.snapshot.mission.id}', missionId: response.snapshot.mission.id, durationMs: durationMs);
-      
-      // El backend nos devolvió la misión y el snapshot inicial, lo guardamos
-      _currentMission = response.snapshot.mission;
+
+      final durationMs =
+          DateTime.now()
+              .difference(startTime)
+              .inMilliseconds;
+
+      final mission =
+          response.snapshot.mission;
+
+      _currentMission = mission;
+
+      // response.cv YA ES ProfessionalProfile.
+      _currentProfile = response.cv;
+
       _error = null;
+
       notifyListeners();
+
+      AppLogger.info(
+        'Mission',
+        'CV recibido y perfil profesional cargado.',
+        missionId: mission.id,
+        durationMs: durationMs,
+      );
+
       return response;
-      
     } catch (e) {
-      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
-      AppLogger.error('Mission', 'Fallo general al subir CV', durationMs: durationMs, error: e);
+      final durationMs =
+          DateTime.now()
+              .difference(startTime)
+              .inMilliseconds;
+
+      AppLogger.error(
+        'Mission',
+        'Fallo general al subir CV',
+        missionId: missionId,
+        durationMs: durationMs,
+        error: e,
+      );
+
       _error = e.toString();
+
+      notifyListeners();
+
       rethrow;
     } finally {
       _setLoading(false);
@@ -125,28 +229,38 @@ class MissionActions extends ChangeNotifier {
   }
 
   Future<void> resumeMission() async {
-    if (_currentMission == null) return;
-    try {
-      await _missionRepository.resumeMission(_currentMission!.id);
-    } catch (e) {
-      AppLogger.error('Mission', 'Failed to resume mission: $e');
+    final mission = _currentMission;
+
+    if (mission == null) {
+      return;
     }
+
+    await _missionRepository
+        .resumeMission(mission.id);
   }
 
   Future<void> restartMission() async {
-    if (_currentMission == null) return;
-    try {
-      await _missionRepository.restartMission(_currentMission!.id);
-    } catch (e) {
-      AppLogger.error('Mission', 'Failed to restart mission: $e');
+    final mission = _currentMission;
+
+    if (mission == null) {
+      return;
     }
+
+    await _missionRepository
+        .restartMission(mission.id);
   }
 
   void startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      loadActiveMission(silent: true);
-    });
+
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) {
+        loadActiveMission(
+          silent: true,
+        );
+      },
+    );
   }
 
   void stopPolling() {

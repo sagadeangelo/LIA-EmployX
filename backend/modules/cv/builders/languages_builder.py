@@ -5,7 +5,10 @@ from __future__ import annotations
 import re
 from typing import List
 
-from backend.modules.cv.builders.base_builder import BaseBuilder, BuildResult
+from backend.modules.cv.builders.base_builder import (
+    BaseBuilder,
+    BuildResult,
+)
 from backend.modules.cv.models.cv_language import CVLanguage
 
 
@@ -13,16 +16,16 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
     """
     Build structured language records from semi-structured CV text.
 
-    Handles common extracted formats such as:
+    Supported formats include:
 
         Spanish: Native
-        English: B2 — Upper-Intermediate
+        English: B2
+        English - B2
+        English — B2
+        Español — Nativo
+        Inglés — B2
 
-    and merged DOCX text such as:
-
-        Spanish: NativeEnglish: B2 — Upper-Intermediate
-
-    The parser is intentionally deterministic and conservative.
+    The parser is deterministic and conservative.
     """
 
     _HEADERS = {
@@ -31,7 +34,6 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         "idiomas",
         "languageskills",
         "habilidadeslinguisticas",
-        "habilidadeslingüísticas",
     }
 
     _LANGUAGE_NAMES = {
@@ -69,6 +71,8 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
     _LEVEL_PATTERN = (
         r"(?:"
         r"Native"
+        r"|Nativo"
+        r"|Nativa"
         r"|Fluent"
         r"|Basic"
         r"|Elementary"
@@ -80,15 +84,20 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         r"|Lower[- ]Intermediate"
         r"|Beginner"
         r"|[ABC][12]"
-        r"(?:\s*[—–-]\s*"
-        r"(?:Upper[- ]Intermediate|"
-        r"Lower[- ]Intermediate|"
-        r"Intermediate|"
-        r"Advanced|"
-        r"Basic|"
-        r"Elementary|"
-        r"Fluent|"
-        r"Native)"
+        r"(?:"
+        r"\s*[-—–]\s*"
+        r"(?:"
+        r"Upper[- ]Intermediate"
+        r"|Lower[- ]Intermediate"
+        r"|Intermediate"
+        r"|Advanced"
+        r"|Basic"
+        r"|Elementary"
+        r"|Fluent"
+        r"|Native"
+        r"|Nativo"
+        r"|Nativa"
+        r")"
         r")?"
         r")"
     )
@@ -104,7 +113,9 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         warnings: list[str] = []
 
         if not text or not text.strip():
-            warnings.append("Sección de idiomas vacía.")
+            warnings.append(
+                "Sección de idiomas vacía."
+            )
 
             return BuildResult(
                 data=[],
@@ -114,7 +125,9 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
 
         normalized = self._normalize_text(text)
 
-        lines = self._expand_merged_languages(normalized)
+        lines = self._expand_merged_languages(
+            normalized
+        )
 
         languages: list[CVLanguage] = []
         seen: set[tuple[str, str]] = set()
@@ -131,14 +144,18 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
             parsed_entries = self._parse_line(line)
 
             for language_name, level in parsed_entries:
-                language_name = self._clean_value(language_name)
+                language_name = self._clean_value(
+                    language_name
+                )
+
                 level = self._clean_value(level)
 
                 if not language_name:
                     continue
 
-                # Reject OCR fragments such as "S".
-                if not self._looks_like_language(language_name):
+                if not self._looks_like_language(
+                    language_name
+                ):
                     continue
 
                 key = (
@@ -155,13 +172,14 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
                     CVLanguage(
                         name=language_name,
                         level=level or None,
+                        native=self._is_native_level(level),
                     )
                 )
 
         if not languages:
             warnings.append(
-                "No se pudieron identificar idiomas válidos "
-                "en la sección."
+                "No se pudieron identificar idiomas "
+                "válidos en la sección."
             )
 
             return BuildResult(
@@ -194,8 +212,17 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         text = text.replace("\u200d", "")
         text = text.replace("\ufeff", "")
 
-        text = re.sub(r"[ \t]+", " ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(
+            r"[ \t]+",
+            " ",
+            text,
+        )
+
+        text = re.sub(
+            r"\n{3,}",
+            "\n\n",
+            text,
+        )
 
         return text.strip()
 
@@ -210,28 +237,37 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         """
         Split merged language entries.
 
-        Example:
+        Handles cases such as:
 
-            Spanish: NativeEnglish: B2 — Upper-Intermediate
+            Spanish: NativeEnglish: B2
 
-        becomes:
+        and:
 
-            Spanish: Native
-            English: B2 — Upper-Intermediate
-
-        Uses a forward-looking regex and therefore avoids
-        variable-length look-behind, which is unsupported by
-        Python's regular expression engine.
+            Español — NativoInglés — B2
         """
 
         expanded: list[str] = []
 
+        language_pattern = (
+            r"(?:"
+            r"Spanish|Español|Espanol|"
+            r"English|Inglés|Ingles|"
+            r"French|Français|Frances|"
+            r"German|Alemán|Aleman|"
+            r"Italian|Italiano|"
+            r"Portuguese|Português|Portugues|"
+            r"Chinese|Mandarin|"
+            r"Japanese|Japonés|Japones|"
+            r"Korean|Coreano|"
+            r"Russian|Ruso|"
+            r"Arabic|Árabe|Arabe"
+            r")"
+        )
+
         pattern = re.compile(
             rf"({self._LEVEL_PATTERN})"
-            rf"(?=(?:Spanish|Español|English|Inglés|"
-            rf"French|Français|German|Deutsch|Italian|Italiano|"
-            rf"Portuguese|Português|Chinese|Mandarin|Japanese|"
-            rf"Korean|Russian|Arabic)\b)",
+            rf"(?=(?:{language_pattern})"
+            rf"(?:\s*[:\-—–])?\s*)",
             re.IGNORECASE,
         )
 
@@ -253,7 +289,9 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
 
                 last = end
 
-            pieces.append(line[last:])
+            pieces.append(
+                line[last:]
+            )
 
             for piece in pieces:
                 piece = piece.strip()
@@ -274,39 +312,50 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         """
         Parse a single language line.
 
-        Supported forms:
+        Supported:
 
             Spanish: Native
+            English: B2
             English - B2
-            English — B2 — Upper-Intermediate
+            English — B2
+            Español — Nativo
+            Inglés — B2
         """
 
         results: list[tuple[str, str]] = []
 
         # --------------------------------------------------------
-        # Standard colon format
+        # Colon
         # --------------------------------------------------------
 
         if ":" in line:
-            name, level = line.split(":", 1)
+            name, level = line.split(
+                ":",
+                1,
+            )
 
             name = self._clean_value(name)
             level = self._clean_value(level)
 
             if self._looks_like_language(name):
-                results.append((name, level))
+                results.append(
+                    (
+                        name,
+                        level,
+                    )
+                )
 
                 return results
 
         # --------------------------------------------------------
-        # Dash format
+        # Dash / em dash / en dash
         # --------------------------------------------------------
 
         match = re.match(
-            rf"^(?P<name>[A-Za-zÀ-ÿ ]+?)"
-            rf"\s*[-–—]\s*"
+            rf"^(?P<name>.+?)"
+            rf"\s*[-—–]\s*"
             rf"(?P<level>{self._LEVEL_PATTERN})"
-            rf"(?:\s*[-–—]\s*(?P<extra>.+))?$",
+            rf"\s*$",
             line,
             re.IGNORECASE,
         )
@@ -320,15 +369,13 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
                 match.group("level")
             )
 
-            extra = self._clean_value(
-                match.group("extra") or ""
-            )
-
-            if extra:
-                level = f"{level} — {extra}"
-
             if self._looks_like_language(name):
-                results.append((name, level))
+                results.append(
+                    (
+                        name,
+                        level,
+                    )
+                )
 
                 return results
 
@@ -351,7 +398,10 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
     # ============================================================
 
     @classmethod
-    def _normalize_header(cls, value: str) -> str:
+    def _normalize_header(
+        cls,
+        value: str,
+    ) -> str:
         """
         Normalize a header for comparison.
         """
@@ -359,11 +409,13 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         value = value.casefold()
 
         replacements = str.maketrans(
-            "áéíóúü",
-            "aeiouu",
+            "áéíóúüñ",
+            "aeiouun",
         )
 
-        value = value.translate(replacements)
+        value = value.translate(
+            replacements
+        )
 
         return re.sub(
             r"[^a-z]",
@@ -372,12 +424,17 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         )
 
     @classmethod
-    def _is_header(cls, value: str) -> bool:
+    def _is_header(
+        cls,
+        value: str,
+    ) -> bool:
         """
-        Determine whether a line is a language section header.
+        Determine whether a line is a language header.
         """
 
-        normalized = cls._normalize_header(value)
+        normalized = cls._normalize_header(
+            value
+        )
 
         normalized_headers = {
             cls._normalize_header(header)
@@ -393,8 +450,6 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
     ) -> bool:
         """
         Determine whether a string represents a known language.
-
-        This intentionally rejects OCR fragments such as "S".
         """
 
         clean = cls._clean_value(value)
@@ -402,30 +457,48 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         if not clean:
             return False
 
-        normalized = cls._normalize_header(clean)
+        normalized = cls._normalize_header(
+            clean
+        )
 
         normalized_languages = {
             cls._normalize_header(name)
             for name in cls._LANGUAGE_NAMES
         }
 
-        if normalized in normalized_languages:
-            return True
+        return normalized in normalized_languages
 
-        # Reject very short OCR fragments.
-        if len(clean) < 3:
-            return False
+    # ============================================================
+    # LEVEL HELPERS
+    # ============================================================
 
-        # At this stage we intentionally remain conservative.
-        # Unknown language names are not accepted automatically.
-        return False
+    @staticmethod
+    def _is_native_level(
+        level: str,
+    ) -> bool:
+        """
+        Determine whether a language level means native.
+        """
+
+        normalized = (
+            level.strip()
+            .casefold()
+        )
+
+        return normalized in {
+            "native",
+            "nativo",
+            "nativa",
+        }
 
     # ============================================================
     # CLEANING
     # ============================================================
 
     @staticmethod
-    def _clean_line(value: str) -> str:
+    def _clean_line(
+        value: str,
+    ) -> str:
         """
         Remove decorative prefixes and normalize whitespace.
         """
@@ -433,7 +506,7 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         value = value.strip()
 
         value = re.sub(
-            r"^[^A-Za-zÀ-ÿ0-9]+",
+            r"^[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+",
             "",
             value,
         )
@@ -447,7 +520,9 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         return value.strip()
 
     @staticmethod
-    def _clean_value(value: str) -> str:
+    def _clean_value(
+        value: str,
+    ) -> str:
         """
         Clean a parsed language value.
         """
@@ -458,7 +533,7 @@ class LanguagesBuilder(BaseBuilder[List[CVLanguage]]):
         value = value.strip()
 
         value = re.sub(
-            r"^[^A-Za-zÀ-ÿ0-9]+",
+            r"^[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]+",
             "",
             value,
         )

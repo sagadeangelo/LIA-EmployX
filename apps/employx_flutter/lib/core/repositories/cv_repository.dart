@@ -1,77 +1,177 @@
-import 'package:dio/dio.dart';
-import 'package:http_parser/http_parser.dart';
-import '../utils/app_logger.dart';
+﻿import 'package:dio/dio.dart';
+
+import '../api/api_client.dart';
 import '../models/upload_mission_response.dart';
+import '../utils/app_logger.dart';
 
 class CVRepository {
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: 'http://127.0.0.1:8000', // Adjust baseUrl based on env
-    headers: {
-      'Accept': 'application/json', // Swagger envía esto
-    }
-  )); 
+  final ApiClient _apiClient;
 
-  Future<UploadMissionResponse> uploadCV(String filePath, String fileName, {String? missionId, void Function(int, int)? onSendProgress}) async {
+  CVRepository({
+    ApiClient? apiClient,
+  }) : _apiClient = apiClient ?? ApiClient();
+
+  Future<UploadMissionResponse> uploadCV(
+    String filePath,
+    String fileName, {
+    String? missionId,
+    void Function(int sent, int total)? onSendProgress,
+  }) async {
     final startTime = DateTime.now();
-    AppLogger.info('Repository', 'Preparando archivo para subida...', missionId: missionId);
-    
-    // Asignar el MediaType genérico (Swagger suele enviar el mime real, octet-stream o pdf)
-    // Para igualar a swagger que infiere el tipo por el archivo, usamos explícitamente application/pdf (asumiendo que es CV)
-    final multipartFile = await MultipartFile.fromFile(
-      filePath, 
-      filename: fileName,
-      contentType: MediaType('application', 'pdf')
+
+    AppLogger.info(
+      'CVRepository',
+      'Preparando CV para subida...',
+      missionId: missionId,
     );
-    
-    FormData formData = FormData.fromMap({
-      "file": multipartFile,
-      if (missionId != null) "mission_id": missionId,
+
+    final multipartFile =
+        await MultipartFile.fromFile(
+      filePath,
+      filename: fileName,
+      contentType: _contentTypeForFile(
+        fileName,
+      ),
+    );
+
+    final formData = FormData.fromMap({
+      'file': multipartFile,
+      if (missionId != null &&
+          missionId.isNotEmpty)
+        'mission_id': missionId,
     });
 
     AppLogger.info(
-      'Repository', 
-      'Enviando POST a /api/v1/cv/upload | URL Base: ${_dio.options.baseUrl} | Headers: ${_dio.options.headers} | Archivo: ${multipartFile.filename}',
-      missionId: missionId
+      'CVRepository',
+      'POST /api/v1/cv/upload',
+      missionId: missionId,
+    );
+
+    AppLogger.info(
+      'CVRepository',
+      'Archivo: $fileName',
+      missionId: missionId,
     );
 
     try {
-      final reqStartTime = DateTime.now();
-      
-      // LOG INSTRUMENTAL DE LA PETICION (REQUEST)
-      AppLogger.info('Repository', '--- INIT FLUTTER REQUEST LOG ---');
-      AppLogger.info('Repository', 'POST ${_dio.options.baseUrl}/api/v1/cv/upload');
-      AppLogger.info('Repository', 'Headers: ${_dio.options.headers}');
-      AppLogger.info('Repository', 'FormData Fields: ${formData.fields}');
-      AppLogger.info('Repository', 'FormData Files: ${formData.files.map((e) => '${e.key}: ${e.value.filename} (${e.value.contentType})').toList()}');
-      AppLogger.info('Repository', '--- END FLUTTER REQUEST LOG ---');
-
-      final response = await _dio.post(
-        '/api/v1/cv/upload', 
+      final response =
+          await _apiClient.post(
+        '/cv/upload',
         data: formData,
         onSendProgress: onSendProgress,
       );
-      final reqDuration = DateTime.now().difference(reqStartTime).inMilliseconds;
-      
-      AppLogger.info('Repository', 'Respuesta recibida - Status: ${response.statusCode}', missionId: missionId, durationMs: reqDuration);
-      
-      if (response.statusCode == 200) {
-        AppLogger.info('Repository', 'Subida exitosa confirmada por backend', missionId: missionId);
-        return UploadMissionResponse.fromJson(response.data);
-      } else {
-        throw Exception('Failed to upload CV: ${response.statusMessage}');
+
+      final durationMs =
+          DateTime.now()
+              .difference(startTime)
+              .inMilliseconds;
+
+      AppLogger.info(
+        'CVRepository',
+        'Respuesta recibida: ${response.statusCode}',
+        missionId: missionId,
+        durationMs: durationMs,
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'CV upload failed: '
+          '${response.statusCode} '
+          '${response.statusMessage}',
+        );
       }
+
+      if (response.data is! Map) {
+        throw Exception(
+          'Invalid CV upload response: '
+          'expected JSON object.',
+        );
+      }
+
+      final result =
+          UploadMissionResponse.fromJson(
+        Map<String, dynamic>.from(
+          response.data as Map,
+        ),
+      );
+
+      AppLogger.info(
+        'CVRepository',
+        'CV procesado correctamente.',
+        missionId: missionId,
+        durationMs: durationMs,
+      );
+
+      return result;
     } on DioException catch (e) {
-      final totalDuration = DateTime.now().difference(startTime).inMilliseconds;
-      AppLogger.error('Repository', 'Error en la petición Dio: ${e.message}', missionId: missionId, durationMs: totalDuration);
-      
-      // LOG INSTRUMENTAL DE LA RESPUESTA (RESPONSE ERROR)
-      AppLogger.error('Repository', '--- INIT FLUTTER ERROR RESPONSE LOG ---');
-      AppLogger.error('Repository', 'Status Code: ${e.response?.statusCode}');
-      AppLogger.error('Repository', 'Headers: ${e.response?.headers}');
-      AppLogger.error('Repository', 'Body: ${e.response?.data}');
-      AppLogger.error('Repository', '--- END FLUTTER ERROR RESPONSE LOG ---');
-      
+      final durationMs =
+          DateTime.now()
+              .difference(startTime)
+              .inMilliseconds;
+
+      AppLogger.error(
+        'CVRepository',
+        'Error Dio durante upload: ${e.message}',
+        missionId: missionId,
+        durationMs: durationMs,
+        error: e,
+      );
+
       rethrow;
+    } catch (e) {
+      final durationMs =
+          DateTime.now()
+              .difference(startTime)
+              .inMilliseconds;
+
+      AppLogger.error(
+        'CVRepository',
+        'Error procesando respuesta del CV: $e',
+        missionId: missionId,
+        durationMs: durationMs,
+        error: e,
+      );
+
+      rethrow;
+    }
+  }
+
+  DioMediaType _contentTypeForFile(
+    String fileName,
+  ) {
+    final extension =
+        fileName.toLowerCase().split('.').last;
+
+    switch (extension) {
+      case 'pdf':
+        return DioMediaType(
+          'application',
+          'pdf',
+        );
+
+      case 'docx':
+        return DioMediaType(
+          'application',
+          'vnd.openxmlformats-officedocument.wordprocessingml.document',
+        );
+
+      case 'doc':
+        return DioMediaType(
+          'application',
+          'msword',
+        );
+
+      case 'txt':
+        return DioMediaType(
+          'text',
+          'plain',
+        );
+
+      default:
+        return DioMediaType(
+          'application',
+          'octet-stream',
+        );
     }
   }
 }

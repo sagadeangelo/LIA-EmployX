@@ -155,7 +155,9 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
         warnings: list[str] = []
 
         if not text or not text.strip():
-            warnings.append("Sección de habilidades vacía.")
+            warnings.append(
+                "Sección de habilidades vacía."
+            )
 
             return BuildResult(
                 data=[],
@@ -165,7 +167,9 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
 
         normalized = self._normalize_text(text)
 
-        candidates = self._extract_candidates(normalized)
+        candidates = self._extract_candidates(
+            normalized
+        )
 
         skills: list[CVSkill] = []
 
@@ -272,6 +276,29 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
             comma-separated lists
             middle-dot separated lists
             "Technologies: ..."
+            concatenated known skills
+
+        Examples:
+
+            Flutter Python
+                ->
+            Flutter
+            Python
+
+            Dart JavaScript
+                ->
+            Dart
+            JavaScript
+
+            REST APIs SQLite
+                ->
+            REST APIs
+            SQLite
+
+            Cloudflare AI Agents
+                ->
+            Cloudflare
+            AI Agents
         """
 
         candidates: list[str] = []
@@ -308,34 +335,244 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
                 continue
 
             # ----------------------------------------------------
-            # A line containing obvious list separators.
+            # A line containing explicit list separators.
             # ----------------------------------------------------
 
-            if any(
-                separator in line
-                for separator in (
-                    ",",
-                    "·",
-                    "•",
-                    "✓",
-                    "✔",
-                    "►",
-                    "▪",
-                    "◆",
-                )
-            ):
+            if self._contains_skill_separator(line):
                 candidates.extend(
                     self._split_skill_list(line)
                 )
                 continue
 
             # ----------------------------------------------------
-            # Plain single candidate.
+            # Plain line.
+            #
+            # The DOCX extractor may remove visual separators.
+            # Attempt to recover known skills before accepting
+            # the entire line as one candidate.
             # ----------------------------------------------------
 
-            candidates.append(line)
+            expanded = self._expand_known_skills(
+                line
+            )
+
+            if expanded:
+                candidates.extend(expanded)
+            else:
+                candidates.append(line)
 
         return candidates
+
+    @staticmethod
+    def _contains_skill_separator(
+        value: str,
+    ) -> bool:
+        """
+        Detect explicit skill-list separators.
+        """
+
+        return any(
+            separator in value
+            for separator in (
+                ",",
+                "·",
+                "•",
+                "✓",
+                "✔",
+                "►",
+                "▪",
+                "◆",
+                "★",
+                "⭐",
+            )
+        )
+
+    def _expand_known_skills(
+        self,
+        value: str,
+    ) -> list[str]:
+        """
+        Recover known skills from a line where the original
+        visual separator was lost during document extraction.
+
+        Multi-word skills are matched first so that:
+
+            Google AI Studio
+
+        remains one skill rather than becoming:
+
+            Google
+            AI
+            Studio
+
+        Likewise:
+
+            REST APIs SQLite
+
+        becomes:
+
+            REST APIs
+            SQLite
+        """
+
+        cleaned = self._clean_line(value)
+
+        if not cleaned:
+            return []
+
+        normalized = re.sub(
+            r"\s+",
+            " ",
+            cleaned.strip(),
+        )
+
+        normalized_key = normalized.casefold()
+
+        # --------------------------------------------------------
+        # Exact known skill.
+        # --------------------------------------------------------
+
+        if normalized_key in self._KNOWN_SKILLS:
+            return [
+                self._KNOWN_SKILLS[
+                    normalized_key
+                ]
+            ]
+
+        # --------------------------------------------------------
+        # Build canonical matching patterns.
+        #
+        # Longer phrases are processed first.
+        # --------------------------------------------------------
+
+        known_items = sorted(
+            self._KNOWN_SKILLS.items(),
+            key=lambda item: (
+                len(item[0].split()),
+                len(item[0]),
+            ),
+            reverse=True,
+        )
+
+        remaining = normalized
+        matches: list[tuple[int, int, str]] = []
+
+        for known_key, canonical in known_items:
+            pattern = re.compile(
+                rf"(?<!\w){re.escape(known_key)}(?!\w)",
+                re.IGNORECASE,
+            )
+
+            for match in pattern.finditer(
+                remaining
+            ):
+                matches.append(
+                    (
+                        match.start(),
+                        match.end(),
+                        canonical,
+                    )
+                )
+
+        if not matches:
+            return []
+
+        # --------------------------------------------------------
+        # Remove overlapping matches.
+        #
+        # Longer/more specific matches were generated first.
+        # --------------------------------------------------------
+
+        matches.sort(
+            key=lambda item: (
+                item[0],
+                -(item[1] - item[0]),
+            )
+        )
+
+        selected: list[tuple[int, int, str]] = []
+
+        for match in matches:
+            start, end, canonical = match
+
+            overlaps = any(
+                start < selected_end
+                and end > selected_start
+                for selected_start, selected_end, _ in selected
+            )
+
+            if overlaps:
+                continue
+
+            selected.append(match)
+
+        if not selected:
+            return []
+
+        selected.sort(
+            key=lambda item: item[0]
+        )
+
+        # --------------------------------------------------------
+        # Validate the unmatched text between recognized skills.
+        #
+        # This prevents turning arbitrary sentences into a list
+        # of skills merely because they contain one known word.
+        # --------------------------------------------------------
+
+        fragments: list[str] = []
+
+        cursor = 0
+
+        for start, end, _ in selected:
+            fragments.append(
+                remaining[cursor:start]
+            )
+            cursor = end
+
+        fragments.append(
+            remaining[cursor:]
+        )
+
+        unmatched = " ".join(
+            fragment.strip()
+            for fragment in fragments
+            if fragment.strip()
+        )
+
+        unmatched = re.sub(
+            r"[\s,;:|·•]+",
+            "",
+            unmatched,
+        )
+
+        # --------------------------------------------------------
+        # If there is substantial unknown text, do not perform
+        # automatic expansion.
+        # --------------------------------------------------------
+
+        if unmatched:
+            unknown_words = [
+                word
+                for word in re.findall(
+                    r"[A-Za-z0-9+#.-]+",
+                    " ".join(fragments),
+                )
+                if word.casefold()
+                not in {
+                    "and",
+                    "or",
+                    "the",
+                }
+            ]
+
+            if unknown_words:
+                return []
+
+        return [
+            canonical
+            for _, _, canonical in selected
+        ]
 
     def _split_skill_list(
         self,
@@ -352,15 +589,30 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
         )
 
         parts = re.split(
-            r"[,\u00b7•✓✔►▪◆]+",
+            r"[,\u00b7•✓✔►▪◆★⭐]+",
             value,
         )
 
-        return [
-            self._clean_line(part)
-            for part in parts
-            if self._clean_line(part)
-        ]
+        candidates: list[str] = []
+
+        for part in parts:
+            cleaned = self._clean_line(
+                part
+            )
+
+            if not cleaned:
+                continue
+
+            expanded = self._expand_known_skills(
+                cleaned
+            )
+
+            if expanded:
+                candidates.extend(expanded)
+            else:
+                candidates.append(cleaned)
+
+        return candidates
 
     # ============================================================
     # SKILL NORMALIZATION
@@ -379,7 +631,6 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
         if not value:
             return ""
 
-        # Remove trailing punctuation.
         value = re.sub(
             r"[.;:]+$",
             "",
@@ -388,15 +639,12 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
 
         key = value.casefold()
 
-        # Exact known skill.
-        known = self._KNOWN_SKILLS.get(key)
+        known = self._KNOWN_SKILLS.get(
+            key
+        )
 
         if known:
             return known
-
-        # --------------------------------------------------------
-        # Known skill embedded in noisy text.
-        # --------------------------------------------------------
 
         for known_key, canonical in sorted(
             self._KNOWN_SKILLS.items(),
@@ -445,13 +693,13 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
             if phrase in normalized:
                 return True
 
-        # A skill should not normally look like a sentence.
-        word_count = len(skill.split())
+        word_count = len(
+            skill.split()
+        )
 
         if word_count > 7:
             return True
 
-        # Sentence-like punctuation.
         if any(
             punctuation in skill
             for punctuation in (
@@ -478,16 +726,11 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
 
         normalized = skill.casefold().strip()
 
-        # Exact known skill is always accepted.
         if normalized in self._KNOWN_SKILLS:
             return True
 
         if skill in self._KNOWN_SKILLS.values():
             return True
-
-        # --------------------------------------------------------
-        # Common technical indicators.
-        # --------------------------------------------------------
 
         technical_terms = (
             "api",
@@ -525,10 +768,6 @@ class SkillsBuilder(BaseBuilder[List[CVSkill]]):
             for term in technical_terms
         ):
             return True
-
-        # --------------------------------------------------------
-        # Reject obvious prose.
-        # --------------------------------------------------------
 
         if re.search(
             r"\b(the|and|with|from|into|that|this|using|to|for)\b",

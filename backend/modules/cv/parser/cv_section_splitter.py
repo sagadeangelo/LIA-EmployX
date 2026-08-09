@@ -16,6 +16,7 @@ Responsabilidades
 - Limpiar artefactos pequeños de extracción DOCX.
 - Recuperar información personal desplazada.
 - Recuperar información personal fragmentada.
+- Recuperar cabeceras personales contaminando otras secciones.
 - Manejar encabezados duplicados.
 - Separar LIA Ecosystem como proyectos.
 - Evitar "Technologies" como falso encabezado dentro de Experience.
@@ -307,8 +308,9 @@ class CVSectionSplitter:
     5. Construir secciones.
     6. Deduplicar bloques repetidos.
     7. Resolver headers duplicados.
-    8. Recuperar información personal.
-    9. Limpiar idiomas.
+    8. Recuperar contaminación de cabecera personal.
+    9. Recuperar información personal desplazada.
+    10. Limpiar idiomas.
     """
 
     def __init__(self) -> None:
@@ -840,8 +842,9 @@ class CVSectionSplitter:
         """
 
         normalized = (
-            self._normalize_for_matching(blocks[block_index])
-            .casefold()
+            self._normalize_for_matching(
+                blocks[block_index]
+            ).casefold()
         )
 
         if normalized != "technologies":
@@ -1015,6 +1018,7 @@ class CVSectionSplitter:
 
         - Summary duplicado.
         - Contacto posterior al segundo Summary.
+        - Cabecera personal contaminando Education.
         - LIA Ecosystem como Projects.
         - Technologies interno de Experience.
         """
@@ -1097,6 +1101,31 @@ class CVSectionSplitter:
             )
 
         # --------------------------------------------------------------------
+        # Section contamination recovery
+        # --------------------------------------------------------------------
+        #
+        # Important for DOCX layouts where visual columns are flattened
+        # sequentially. In the current CV, the education section can be
+        # followed by the visual personal header:
+        #
+        #   MIGUEL
+        #   TOVAR AMARAL
+        #   Full Stack Developer
+        #   ...
+        #   linkedin...
+        #   github...
+        #
+        # That region is not education and must be removed before the
+        # EducationBuilder receives the text.
+        # --------------------------------------------------------------------
+
+        self._remove_personal_profile_from_education(
+            accumulator=accumulator,
+            confidences=confidences,
+            detections=detections,
+        )
+
+        # --------------------------------------------------------------------
         # Personal information recovery
         # --------------------------------------------------------------------
 
@@ -1121,6 +1150,209 @@ class CVSectionSplitter:
             confidences,
             detections,
         )
+
+    # ========================================================================
+    # SECTION CONTAMINATION RECOVERY
+    # ========================================================================
+
+    def _remove_personal_profile_from_education(
+        self,
+        accumulator: dict[SectionKey, list[str]],
+        confidences: dict[SectionKey, float],
+        detections: dict[SectionKey, DetectionMethod],
+    ) -> None:
+        """
+        Evita que una cabecera personal/profesional termine dentro
+        de EDUCATION debido a la pérdida de estructura visual del DOCX.
+
+        Ejemplo:
+
+            Ingeniería Industrial y de Sistemas
+            Universidad del Valle de México
+            Google Data Analytics (Coursera)
+            continua en IA,
+            Flutter y Arquitectura de Software
+            MIGUEL
+            TOVAR AMARAL
+            Full Stack Developer
+            ...
+            linkedin
+            github
+            ...
+
+        La recuperación requiere evidencia semántica suficiente:
+
+        - nombre;
+        - título profesional;
+        - múltiples señales de contacto.
+
+        No depende del nombre concreto del candidato.
+        """
+
+        education_blocks = accumulator.get(
+            "education",
+            [],
+        )
+
+        if not education_blocks:
+            return
+
+        contact_start = self._find_profile_contamination_start(
+            education_blocks
+        )
+
+        if contact_start is None:
+            return
+
+        contaminated = education_blocks[
+            contact_start:
+        ]
+
+        if not contaminated:
+            return
+
+        recovered = self._recover_fragmented_contact(
+            contaminated
+        )
+
+        # No modificar EDUCATION si no podemos reconstruir una cabecera
+        # personal suficientemente confiable.
+        if recovered is None:
+            return
+
+        personal_text, _remaining_blocks = recovered
+
+        if not personal_text:
+            return
+
+        accumulator["education"] = (
+            education_blocks[:contact_start]
+        )
+
+        accumulator["personal_info"].append(
+            personal_text
+        )
+
+        confidences["personal_info"] = max(
+            confidences.get("personal_info", 0.0),
+            0.95,
+        )
+
+        detections["personal_info"] = "recovery"
+
+    def _find_profile_contamination_start(
+        self,
+        blocks: list[str],
+    ) -> int | None:
+        """
+        Encuentra el comienzo de una cabecera personal/profesional
+        contaminando una sección estructurada.
+
+        Requiere:
+
+        1. una línea que parezca nombre;
+        2. un título profesional cercano;
+        3. múltiples señales de contacto posteriormente.
+
+        Esto evita cortar educación legítima por encontrar una palabra
+        como "Developer" o "Engineer".
+        """
+
+        if not blocks:
+            return None
+
+        # --------------------------------------------------------------------
+        # Caso 1:
+        #
+        # Nombre + título profesional + señales de contacto
+        # --------------------------------------------------------------------
+
+        for start_index, candidate in enumerate(blocks):
+            if not self._looks_like_name_line(candidate):
+                continue
+
+            window_end = min(
+                len(blocks),
+                start_index + 25,
+            )
+
+            window = blocks[
+                start_index:window_end
+            ]
+
+            has_profile_title = any(
+                self._looks_like_profile_title(
+                    value
+                )
+                for value in window
+            )
+
+            if not has_profile_title:
+                continue
+
+            contact_signals = sum(
+                1
+                for value in window
+                if self._is_contact_fragment(value)
+            )
+
+            if contact_signals < 2:
+                continue
+
+            return start_index
+
+        # --------------------------------------------------------------------
+        # Caso 2:
+        #
+        # Nombre dividido en dos bloques:
+        #
+        # MIGUEL
+        # TOVAR AMARAL
+        # Full Stack Developer
+        # ...
+        # --------------------------------------------------------------------
+
+        for start_index in range(
+            len(blocks) - 1
+        ):
+            first = blocks[start_index].strip()
+            second = blocks[start_index + 1].strip()
+
+            if not self._looks_like_name_line(first):
+                continue
+
+            if not self._looks_like_name_line(second):
+                continue
+
+            window_end = min(
+                len(blocks),
+                start_index + 25,
+            )
+
+            window = blocks[
+                start_index:window_end
+            ]
+
+            has_profile_title = any(
+                self._looks_like_profile_title(
+                    value
+                )
+                for value in window
+            )
+
+            if not has_profile_title:
+                continue
+
+            contact_signals = sum(
+                1
+                for value in window
+                if self._is_contact_fragment(value)
+            )
+
+            if contact_signals >= 2:
+                return start_index
+
+        return None
 
     # ========================================================================
     # DUPLICATE SUMMARY
@@ -1200,32 +1432,22 @@ class CVSectionSplitter:
         if not contact_part:
             return
 
-        # The DOCX extractor commonly produces the contact header as a
-        # fragmented sequence of blocks.  Do not blindly move the complete
-        # tail of the Summary into personal_info: visual elements such as
-        # FRONTEND/BACKEND and their descriptive text may follow the contact
-        # block in the same extraction region.
         recovered = self._recover_fragmented_contact(
             contact_part
         )
 
         if recovered is not None:
-            personal_text, remaining_blocks = recovered
+            personal_text, _remaining_blocks = recovered
 
             if personal_text:
                 accumulator["personal_info"].append(
                     personal_text
                 )
 
-            # Any remaining blocks after the recovered contact region are
-            # intentionally not classified as personal_info. In this CV
-            # they are visual FRONTEND/BACKEND profile-card fragments.
-            # Keep them out of the canonical contact section.
+            # Los bloques visuales restantes, como FRONTEND/BACKEND,
+            # no se clasifican automáticamente como personal_info.
             return
 
-        # Conservative fallback: keep only the actual contact region when
-        # it can be identified.  Anything after that region remains outside
-        # personal_info and is handled by the normal section pipeline.
         contact_end = self._find_contact_region_end(
             contact_part
         )
@@ -1281,8 +1503,6 @@ class CVSectionSplitter:
                     last_contact = index
                 continue
 
-            # A profile title/tagline is allowed only before the first
-            # contact signal, not after it.
             if last_contact < 0:
                 continue
 
@@ -1299,9 +1519,6 @@ class CVSectionSplitter:
             }:
                 break
 
-            # Once a non-contact block appears after the contact region,
-            # stop. This prevents visual profile-card content from leaking
-            # into personal_info.
             break
 
         if last_contact < 0:
@@ -1330,9 +1547,9 @@ class CVSectionSplitter:
         if not blocks:
             return None
 
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
         # 1. Nombre + apellido + señales de contacto
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
 
         for index in range(len(blocks) - 1):
             if not self._looks_like_name_line(blocks[index]):
@@ -1356,9 +1573,9 @@ class CVSectionSplitter:
             if signal_count >= 2:
                 return index
 
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
         # 2. Una sola línea de nombre + señales
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
 
         for index, block in enumerate(blocks):
             if not self._looks_like_name_line(block):
@@ -1377,9 +1594,9 @@ class CVSectionSplitter:
             if signal_count >= 2:
                 return index
 
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
         # 3. Título profesional corto con nombre anterior
-        # ---------------------------------------------------------------
+        # --------------------------------------------------------------------
 
         for index, block in enumerate(blocks):
             if not self._looks_like_contact_header_block(block):
@@ -1395,7 +1612,6 @@ class CVSectionSplitter:
                     return name_start
 
         return None
-
 
     def _looks_like_contact_header_block(
         self,
@@ -1414,12 +1630,9 @@ class CVSectionSplitter:
         if not value:
             return False
 
-        # Los párrafos narrativos no son cabecera.
         if len(value) > 100:
             return False
 
-        # Títulos profesionales únicamente si son breves y tienen forma
-        # de encabezado, no de oración narrativa.
         if self._looks_like_profile_title(value):
             if (
                 len(value.split()) <= 8
@@ -1523,12 +1736,20 @@ class CVSectionSplitter:
     def _recover_fragmented_contact(
         self,
         blocks: list[str],
-    ) -> (
-        tuple[str, list[str]] | None
-    ):
-        # DOCX extraction can represent a visual contact header as many
-        # independent blocks instead of one multiline block. Handle both
-        # layouts: multiline blocks and fragmented block sequences.
+    ) -> tuple[str, list[str]] | None:
+        """
+        Reconstruye una cabecera personal fragmentada por la extracción DOCX.
+
+        Soporta dos escenarios:
+
+        1. Un bloque contiene múltiples líneas.
+        2. Cada elemento visual fue extraído como un bloque independiente.
+        """
+
+        # --------------------------------------------------------------------
+        # Caso 1: un bloque multilinea
+        # --------------------------------------------------------------------
+
         for block_index, block in enumerate(blocks):
             lines = [
                 line.strip()
@@ -1536,80 +1757,97 @@ class CVSectionSplitter:
                 if line.strip()
             ]
 
-            if len(lines) >= 2:
-                signal_indexes = [
-                    index
-                    for index, line in enumerate(lines)
-                    if self._is_contact_fragment(line)
-                ]
+            if len(lines) < 2:
+                continue
 
-                if len(signal_indexes) >= 2:
-                    first_signal = min(signal_indexes)
-                    last_signal = max(signal_indexes)
+            signal_indexes = [
+                index
+                for index, line in enumerate(lines)
+                if self._is_contact_fragment(line)
+            ]
 
-                    start = self._find_contact_region_start(
-                        lines=lines,
-                        first_signal=first_signal,
-                    )
+            if len(signal_indexes) < 2:
+                continue
 
-                    end = last_signal + 1
+            first_signal = min(signal_indexes)
+            last_signal = max(signal_indexes)
 
-                    while (
-                        end < len(lines)
-                        and end <= last_signal + 6
-                    ):
-                        candidate = lines[end]
+            start = self._find_contact_region_start(
+                lines=lines,
+                first_signal=first_signal,
+            )
 
-                        if self._is_contact_fragment(candidate):
-                            end += 1
-                            continue
+            end = last_signal + 1
 
-                        if self._looks_like_contact_continuation(candidate):
-                            end += 1
-                            continue
+            while (
+                end < len(lines)
+                and end <= last_signal + 6
+            ):
+                candidate = lines[end]
 
-                        break
+                if self._is_contact_fragment(candidate):
+                    end += 1
+                    continue
 
-                    region = lines[start:end]
+                if self._looks_like_contact_continuation(
+                    candidate
+                ):
+                    end += 1
+                    continue
 
-                    if self._region_has_enough_contact_signals(region):
-                        personal_text = "\n".join(region).strip()
+                break
 
-                        if personal_text:
-                            remaining_lines = (
-                                lines[:start]
-                                + lines[end:]
-                            )
+            region = lines[start:end]
 
-                            remaining_text = "\n".join(
-                                remaining_lines
-                            ).strip()
+            if not self._region_has_enough_contact_signals(
+                region
+            ):
+                continue
 
-                            updated_blocks = list(blocks)
+            personal_text = "\n".join(
+                region
+            ).strip()
 
-                            if remaining_text:
-                                updated_blocks[block_index] = remaining_text
-                            else:
-                                updated_blocks.pop(block_index)
+            if not personal_text:
+                continue
 
-                            return (
-                                personal_text,
-                                updated_blocks,
-                            )
+            remaining_lines = (
+                lines[:start]
+                + lines[end:]
+            )
 
-        # Fragmented-block recovery.
+            remaining_text = "\n".join(
+                remaining_lines
+            ).strip()
+
+            updated_blocks = list(blocks)
+
+            if remaining_text:
+                updated_blocks[block_index] = (
+                    remaining_text
+                )
+            else:
+                updated_blocks.pop(block_index)
+
+            return (
+                personal_text,
+                updated_blocks,
+            )
+
+        # --------------------------------------------------------------------
+        # Caso 2: bloques independientes
         #
-        # Example:
-        #   MIGUEL
-        #   TOVAR AMARAL
-        #   Full Stack Developer
-        #   ...
-        #   linkedin comin/
-        #   ...
-        #   +52 ...
-        #
-        # The contact region is reconstructed from the first name line
-        # through the last nearby contact fragment.
+        # MIGUEL
+        # TOVAR AMARAL
+        # Full Stack Developer
+        # ...
+        # linkedin
+        # ...
+        # github
+        # ...
+        # +52...
+        # --------------------------------------------------------------------
+
         for start_index, candidate in enumerate(blocks):
             if not self._looks_like_name_line(candidate):
                 continue
@@ -1619,7 +1857,9 @@ class CVSectionSplitter:
                 start_index + 30,
             )
 
-            window = blocks[start_index:window_end]
+            window = blocks[
+                start_index:window_end
+            ]
 
             signal_positions = [
                 relative_index
@@ -1630,10 +1870,17 @@ class CVSectionSplitter:
             if len(signal_positions) < 2:
                 continue
 
-            last_signal_relative = max(signal_positions)
-            end_index = start_index + last_signal_relative + 1
+            last_signal_relative = max(
+                signal_positions
+            )
 
-            # Include fragmented URL/email continuation pieces.
+            end_index = (
+                start_index
+                + last_signal_relative
+                + 1
+            )
+
+            # Incluir fragmentos de URL/email.
             while end_index < window_end:
                 value = blocks[end_index]
 
@@ -1641,22 +1888,30 @@ class CVSectionSplitter:
                     end_index += 1
                     continue
 
-                if self._looks_like_contact_continuation(value):
+                if self._looks_like_contact_continuation(
+                    value
+                ):
                     end_index += 1
                     continue
 
-                # Include professional title and short tagline when they
-                # occur before the actual contact signals.
+                # El título profesional y un tagline corto pueden estar
+                # entre el nombre y las señales de contacto.
                 if end_index <= start_index + 4:
-                    if self._looks_like_profile_title(value):
+                    if self._looks_like_profile_title(
+                        value
+                    ):
                         end_index += 1
                         continue
 
                 break
 
-            region = blocks[start_index:end_index]
+            region = blocks[
+                start_index:end_index
+            ]
 
-            if not self._region_has_enough_contact_signals(region):
+            if not self._region_has_enough_contact_signals(
+                region
+            ):
                 continue
 
             personal_text = "\n".join(
@@ -1704,7 +1959,9 @@ class CVSectionSplitter:
             search_start - 1,
             -1,
         ):
-            if self._looks_like_profile_title(lines[index]):
+            if self._looks_like_profile_title(
+                lines[index]
+            ):
                 title_index = index
                 break
 
@@ -1728,7 +1985,9 @@ class CVSectionSplitter:
                 continue
 
             if (
-                self._looks_like_name_line(lines[index])
+                self._looks_like_name_line(
+                    lines[index]
+                )
                 and self._looks_like_name_line(
                     lines[index + 1]
                 )
@@ -1751,7 +2010,9 @@ class CVSectionSplitter:
 
         previous = title_index - 1
 
-        if self._looks_like_name_line(lines[previous]):
+        if self._looks_like_name_line(
+            lines[previous]
+        ):
             if (
                 previous > 0
                 and self._looks_like_name_line(
@@ -1784,7 +2045,10 @@ class CVSectionSplitter:
         if len(value) > 40:
             return False
 
-        if any(character.isdigit() for character in value):
+        if any(
+            character.isdigit()
+            for character in value
+        ):
             return False
 
         if any(
@@ -2212,7 +2476,10 @@ class CVSectionSplitter:
 
             semantic = self._semantic_key(value)
 
-            if len(semantic) == 1 and semantic.isalpha():
+            if (
+                len(semantic) == 1
+                and semantic.isalpha()
+            ):
                 continue
 
             if semantic in seen:
