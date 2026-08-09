@@ -1,4 +1,5 @@
 """
+LIA EmployX
 CV Document Builder
 ============================================================
 
@@ -15,6 +16,7 @@ Responsibilities
 - Build languages.
 - Build certifications.
 - Recover certifications incorrectly classified as education.
+- Build projects.
 - Build the canonical CVDocument.
 
 The builder is intentionally deterministic and conservative.
@@ -42,12 +44,21 @@ from backend.modules.cv.builders.languages_builder import (
 from backend.modules.cv.builders.personal_info_builder import (
     PersonalInfoBuilder,
 )
+from backend.modules.cv.builders.projects_builder import (
+    ProjectsBuilder,
+)
 from backend.modules.cv.builders.skills_builder import (
     SkillsBuilder,
 )
-from backend.modules.cv.models.cv_document import CVDocument
-from backend.modules.cv.models.cv_metadata import CVMetadata
-from backend.modules.cv.language.language_result import LanguageResult
+from backend.modules.cv.language.language_result import (
+    LanguageResult,
+)
+from backend.modules.cv.models.cv_document import (
+    CVDocument,
+)
+from backend.modules.cv.models.cv_metadata import (
+    CVMetadata,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +67,12 @@ logger = logging.getLogger(__name__)
 class CVDocumentBuilder:
     """
     Orchestrates construction of the canonical CVDocument.
+
+    Each specialized builder is responsible for one semantic
+    portion of the CV.
+
+    This class only coordinates those builders and assembles
+    the final canonical document.
     """
 
     def __init__(self) -> None:
@@ -65,6 +82,7 @@ class CVDocumentBuilder:
         self.skills_builder = SkillsBuilder()
         self.languages_builder = LanguagesBuilder()
         self.certifications_builder = CertificationsBuilder()
+        self.projects_builder = ProjectsBuilder()
 
     # ============================================================
     # PUBLIC API
@@ -111,6 +129,13 @@ class CVDocumentBuilder:
         # ========================================================
 
         def get_text(key: str) -> str:
+            """
+            Safely retrieve section text.
+
+            Supports both SectionResult-like objects containing
+            a `.text` attribute and plain string values.
+            """
+
             value = sections.get(key)
 
             if hasattr(value, "text"):
@@ -125,9 +150,11 @@ class CVDocumentBuilder:
         # PERSONAL INFORMATION
         # ========================================================
 
-        personal_info_text = self._build_personal_info_input(
-            section_text=get_text("personal_info"),
-            ocr_text=ocr_text,
+        personal_info_text = (
+            self._build_personal_info_input(
+                section_text=get_text("personal_info"),
+                ocr_text=ocr_text,
+            )
         )
 
         personal_info_result = (
@@ -156,12 +183,10 @@ class CVDocumentBuilder:
             )
         )
 
-        # EducationBuilder now returns EducationBuildData:
-        #
+        # EducationBuilder returns EducationBuildData:
+
         # education_result.data.education
         # education_result.data.continuous_training
-        #
-        # Keep both collections separate.
 
         formal_education = list(
             education_result.data.education
@@ -235,6 +260,20 @@ class CVDocumentBuilder:
         )
 
         # ========================================================
+        # PROJECTS
+        # ========================================================
+
+        projects_result = (
+            self.projects_builder.build(
+                get_text("projects")
+            )
+        )
+
+        projects_data = list(
+            projects_result.data
+        )
+
+        # ========================================================
         # LOGGING
         # ========================================================
 
@@ -266,6 +305,11 @@ class CVDocumentBuilder:
         self._log_result(
             "Certifications",
             certifications_result,
+        )
+
+        self._log_result(
+            "Projects",
+            projects_result,
         )
 
         # ========================================================
@@ -300,6 +344,7 @@ class CVDocumentBuilder:
             skills=skills_result.data,
             languages=languages_result.data,
             certifications=certifications_data,
+            projects=projects_data,
             raw_text=raw_text,
             cleaned_text=raw_text,
             sections=clean_sections,
@@ -326,7 +371,8 @@ class CVDocumentBuilder:
 
         becomes:
 
-            Google Data Analytics Professional Certificate — Coursera
+            Google Data Analytics Professional Certificate
+            — Coursera
 
         Only strong certification indicators are moved.
         """
@@ -553,19 +599,25 @@ class CVDocumentBuilder:
         Create a deterministic deduplication key.
         """
 
-        name = CVDocumentBuilder._normalize_match(
-            getattr(
-                certification,
-                "name",
-                "",
+        name = (
+            CVDocumentBuilder
+            ._normalize_match(
+                getattr(
+                    certification,
+                    "name",
+                    "",
+                )
             )
         )
 
-        issuer = CVDocumentBuilder._normalize_match(
-            getattr(
-                certification,
-                "issuer",
-                "",
+        issuer = (
+            CVDocumentBuilder
+            ._normalize_match(
+                getattr(
+                    certification,
+                    "issuer",
+                    "",
+                )
             )
         )
 
