@@ -19,10 +19,22 @@ class ProfileSkillsWidget extends StatelessWidget {
     final spacings = context.liaSpacings;
 
     final technicalSkills =
-        profile.skills.technicalSkills;
+        profile.skills.items
+            .where(
+              (skill) =>
+                  skill.category.toLowerCase() !=
+                  'soft',
+            )
+            .toList();
 
     final softSkills =
-        profile.skills.softSkills;
+        profile.skills.items
+            .where(
+              (skill) =>
+                  skill.category.toLowerCase() ==
+                  'soft',
+            )
+            .toList();
 
     if (technicalSkills.isEmpty &&
         softSkills.isEmpty) {
@@ -89,7 +101,7 @@ class ProfileSkillsWidget extends StatelessWidget {
   Widget _buildSkillGroup(
     BuildContext context, {
     required String title,
-    required List<String> skills,
+    required List<Skill> skills,
     required bool isTechnical,
   }) {
     final colors = context.liaColors;
@@ -129,7 +141,7 @@ class ProfileSkillsWidget extends StatelessWidget {
 
   Widget _buildChip(
     BuildContext context,
-    String label, {
+    Skill skill, {
     required bool isTechnical,
   }) {
     final colors = context.liaColors;
@@ -157,7 +169,7 @@ class ProfileSkillsWidget extends StatelessWidget {
         ),
       ),
       child: Text(
-        label,
+        skill.name,
         style: typography.bodyMedium.copyWith(
           color: accentColor,
           fontWeight: FontWeight.w500,

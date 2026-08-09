@@ -11,7 +11,7 @@ class PersonalInfo {
   final String currentPosition;
   final int yearsOfExperience;
 
-  PersonalInfo({
+  const PersonalInfo({
     this.name = '',
     this.email = '',
     this.phone = '',
@@ -27,17 +27,23 @@ class PersonalInfo {
 
   factory PersonalInfo.fromJson(Map<String, dynamic> json) {
     return PersonalInfo(
-      name: json['name'] ?? '',
-      email: json['email'] ?? '',
-      phone: json['phone'] ?? '',
-      location: json['location'] ?? '',
-      linkedin: json['linkedin'] ?? '',
-      portfolio: json['portfolio'] ?? '',
-      website: json['website'] ?? '',
-      professionalSummary: json['professional_summary'] ?? '',
-      careerGoal: json['career_goal'] ?? '',
-      currentPosition: json['current_position'] ?? '',
-      yearsOfExperience: json['years_of_experience'] ?? 0,
+      name: _string(json['name']),
+      email: _string(json['email']),
+      phone: _string(json['phone']),
+      location: _string(json['location']),
+      linkedin: _string(json['linkedin']),
+      portfolio: _string(json['portfolio']),
+      website: _string(json['website']),
+      professionalSummary: _string(
+        json['professional_summary'],
+      ),
+      careerGoal: _string(json['career_goal']),
+      currentPosition: _string(
+        json['current_position'],
+      ),
+      yearsOfExperience: _int(
+        json['years_of_experience'],
+      ),
     );
   }
 }
@@ -52,7 +58,7 @@ class Experience {
   final List<String> technologies;
   final List<String> skillsUsed;
 
-  Experience({
+  const Experience({
     this.company = '',
     this.role = '',
     this.startDate = '',
@@ -63,16 +69,26 @@ class Experience {
     this.skillsUsed = const [],
   });
 
-  factory Experience.fromJson(Map<String, dynamic> json) {
+  factory Experience.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Experience(
-      company: json['company'] ?? '',
-      role: json['role'] ?? '',
-      startDate: json['start_date'] ?? '',
-      endDate: json['end_date'] ?? '',
-      description: json['description'] ?? '',
-      achievements: List<String>.from(json['achievements'] ?? []),
-      technologies: List<String>.from(json['technologies'] ?? []),
-      skillsUsed: List<String>.from(json['skills_used'] ?? []),
+      company: _string(json['company']),
+      role: _string(
+        json['role'] ?? json['position'],
+      ),
+      startDate: _string(json['start_date']),
+      endDate: _string(json['end_date']),
+      description: _string(json['description']),
+      achievements: _stringList(
+        json['achievements'],
+      ),
+      technologies: _stringList(
+        json['technologies'],
+      ),
+      skillsUsed: _stringList(
+        json['skills_used'],
+      ),
     );
   }
 }
@@ -80,94 +96,379 @@ class Experience {
 class Education {
   final String institution;
   final String degree;
-  final String level;
-  final String period;
+  final String fieldOfStudy;
+  final String educationLevel;
+  final String location;
+  final String startDate;
+  final String endDate;
+  final bool current;
+  final String description;
+  final String gpa;
+  final List<String> honors;
+  final double confidence;
 
-  Education({
+  const Education({
     this.institution = '',
     this.degree = '',
-    this.level = '',
-    this.period = '',
+    this.fieldOfStudy = '',
+    this.educationLevel = '',
+    this.location = '',
+    this.startDate = '',
+    this.endDate = '',
+    this.current = false,
+    this.description = '',
+    this.gpa = '',
+    this.honors = const [],
+    this.confidence = 1.0,
   });
 
-  factory Education.fromJson(Map<String, dynamic> json) {
+  factory Education.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Education(
-      institution: json['institution'] ?? '',
-      degree: json['degree'] ?? '',
-      level: json['level'] ?? '',
-      period: json['period'] ?? '',
+      institution: _string(json['institution']),
+      degree: _string(json['degree']),
+      fieldOfStudy: _string(
+        json['field_of_study'],
+      ),
+      educationLevel: _string(
+        json['education_level'] ?? json['level'],
+      ),
+      location: _string(json['location']),
+      startDate: _string(json['start_date']),
+      endDate: _string(json['end_date']),
+      current: _bool(json['current']),
+      description: _string(json['description']),
+      gpa: _string(json['gpa']),
+      honors: _stringList(json['honors']),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
+    );
+  }
+}
+
+class ContinuousTraining {
+  final String institution;
+  final String degree;
+  final String fieldOfStudy;
+  final String educationLevel;
+  final String location;
+  final String startDate;
+  final String endDate;
+  final bool current;
+  final String description;
+  final String gpa;
+  final List<String> honors;
+  final double confidence;
+
+  const ContinuousTraining({
+    this.institution = '',
+    this.degree = '',
+    this.fieldOfStudy = '',
+    this.educationLevel = '',
+    this.location = '',
+    this.startDate = '',
+    this.endDate = '',
+    this.current = false,
+    this.description = '',
+    this.gpa = '',
+    this.honors = const [],
+    this.confidence = 1.0,
+  });
+
+  factory ContinuousTraining.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return ContinuousTraining(
+      institution: _string(json['institution']),
+      degree: _string(json['degree']),
+      fieldOfStudy: _string(
+        json['field_of_study'],
+      ),
+      educationLevel: _string(
+        json['education_level'] ?? json['level'],
+      ),
+      location: _string(json['location']),
+      startDate: _string(json['start_date']),
+      endDate: _string(json['end_date']),
+      current: _bool(json['current']),
+      description: _string(json['description']),
+      gpa: _string(json['gpa']),
+      honors: _stringList(json['honors']),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
+    );
+  }
+}
+
+class Skill {
+  final String name;
+  final String category;
+  final String level;
+  final double? years;
+  final double confidence;
+  final String source;
+  final bool verified;
+
+  const Skill({
+    this.name = '',
+    this.category = '',
+    this.level = '',
+    this.years,
+    this.confidence = 1.0,
+    this.source = '',
+    this.verified = false,
+  });
+
+  factory Skill.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return Skill(
+      name: _string(json['name']),
+      category: _string(json['category']),
+      level: _string(json['level']),
+      years: _nullableDouble(json['years']),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
+      source: _string(json['source']),
+      verified: _bool(json['verified']),
     );
   }
 }
 
 class Skills {
-  final List<String> technicalSkills;
-  final List<String> softSkills;
-  final List<String> tools;
-  final List<String> frameworks;
-  final List<String> programmingLanguages;
-  final List<String> databases;
-  final List<String> cloud;
+  final List<Skill> items;
 
-  Skills({
-    this.technicalSkills = const [],
-    this.softSkills = const [],
-    this.tools = const [],
-    this.frameworks = const [],
-    this.programmingLanguages = const [],
-    this.databases = const [],
-    this.cloud = const [],
+  const Skills({
+    this.items = const [],
   });
 
-  factory Skills.fromJson(Map<String, dynamic> json) {
-    return Skills(
-      technicalSkills: List<String>.from(json['technical_skills'] ?? []),
-      softSkills: List<String>.from(json['soft_skills'] ?? []),
-      tools: List<String>.from(json['tools'] ?? []),
-      frameworks: List<String>.from(json['frameworks'] ?? []),
-      programmingLanguages: List<String>.from(json['programming_languages'] ?? []),
-      databases: List<String>.from(json['databases'] ?? []),
-      cloud: List<String>.from(json['cloud'] ?? []),
-    );
+  factory Skills.fromJson(
+    dynamic json,
+  ) {
+    if (json is List) {
+      return Skills(
+        items: json
+            .whereType<Map>()
+            .map(
+              (item) => Skill.fromJson(
+                Map<String, dynamic>.from(item),
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    if (json is Map<String, dynamic>) {
+      final technical = _skillList(
+        json['technical_skills'],
+      );
+
+      final soft = _skillList(
+        json['soft_skills'],
+      );
+
+      final tools = _skillList(
+        json['tools'],
+      );
+
+      final frameworks = _skillList(
+        json['frameworks'],
+      );
+
+      final programming = _skillList(
+        json['programming_languages'],
+      );
+
+      final databases = _skillList(
+        json['databases'],
+      );
+
+      final cloud = _skillList(
+        json['cloud'],
+      );
+
+      return Skills(
+        items: [
+          ...technical,
+          ...soft,
+          ...tools,
+          ...frameworks,
+          ...programming,
+          ...databases,
+          ...cloud,
+        ],
+      );
+    }
+
+    return const Skills();
+  }
+
+  List<Skill> get technicalSkills {
+    return items
+        .where(
+          (skill) =>
+              skill.category.toLowerCase() ==
+              'technical',
+        )
+        .toList();
+  }
+
+  List<Skill> get softSkills {
+    return items
+        .where(
+          (skill) =>
+              skill.category.toLowerCase() ==
+              'soft',
+        )
+        .toList();
   }
 }
 
 class Language {
-  final String language;
+  final String name;
   final String level;
-  final String certification;
+  final bool native;
+  final bool certified;
+  final String? certification;
+  final String? score;
+  final double confidence;
 
-  Language({
-    this.language = '',
+  const Language({
+    this.name = '',
     this.level = '',
-    this.certification = '',
+    this.native = false,
+    this.certified = false,
+    this.certification,
+    this.score,
+    this.confidence = 1.0,
   });
 
-  factory Language.fromJson(Map<String, dynamic> json) {
+  String get language => name;
+
+  factory Language.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Language(
-      language: json['language'] ?? '',
-      level: json['level'] ?? '',
-      certification: json['certification'] ?? '',
+      name: _string(
+        json['name'] ?? json['language'],
+      ),
+      level: _string(json['level']),
+      native: _bool(json['native']),
+      certified: _bool(json['certified']),
+      certification:
+          _nullableString(json['certification']),
+      score: _nullableString(json['score']),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
     );
   }
 }
 
 class Certification {
   final String name;
-  final String provider;
-  final String date;
+  final String issuer;
+  final String? credentialId;
+  final String? credentialUrl;
+  final String? issueDate;
+  final String? expirationDate;
+  final bool neverExpires;
+  final List<String> skills;
+  final bool verified;
+  final double confidence;
 
-  Certification({
+  const Certification({
     this.name = '',
-    this.provider = '',
-    this.date = '',
+    this.issuer = '',
+    this.credentialId,
+    this.credentialUrl,
+    this.issueDate,
+    this.expirationDate,
+    this.neverExpires = false,
+    this.skills = const [],
+    this.verified = false,
+    this.confidence = 1.0,
   });
 
-  factory Certification.fromJson(Map<String, dynamic> json) {
+  String get provider => issuer;
+
+  String get date => issueDate ?? '';
+
+  factory Certification.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return Certification(
-      name: json['name'] ?? '',
-      provider: json['provider'] ?? '',
-      date: json['date'] ?? '',
+      name: _string(json['name']),
+      issuer: _string(
+        json['issuer'] ?? json['provider'],
+      ),
+      credentialId:
+          _nullableString(json['credential_id']),
+      credentialUrl:
+          _nullableString(json['credential_url']),
+      issueDate:
+          _nullableString(json['issue_date']),
+      expirationDate:
+          _nullableString(json['expiration_date']),
+      neverExpires:
+          _bool(json['never_expires']),
+      skills: _stringList(json['skills']),
+      verified: _bool(json['verified']),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
+    );
+  }
+}
+
+class Project {
+  final String name;
+  final String description;
+  final String role;
+  final String url;
+  final List<String> technologies;
+  final List<String> achievements;
+  final double confidence;
+
+  const Project({
+    this.name = '',
+    this.description = '',
+    this.role = '',
+    this.url = '',
+    this.technologies = const [],
+    this.achievements = const [],
+    this.confidence = 1.0,
+  });
+
+  factory Project.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return Project(
+      name: _string(json['name']),
+      description: _string(json['description']),
+      role: _string(json['role']),
+      url: _string(
+        json['url'] ?? json['project_url'],
+      ),
+      technologies: _stringList(
+        json['technologies'],
+      ),
+      achievements: _stringList(
+        json['achievements'],
+      ),
+      confidence: _double(
+        json['confidence'],
+        defaultValue: 1.0,
+      ),
     );
   }
 }
@@ -179,7 +480,7 @@ class ATSMetrics {
   final String compatibility;
   final List<String> observations;
 
-  ATSMetrics({
+  const ATSMetrics({
     this.atsScore = 0,
     this.detectedKeywords = const [],
     this.missingKeywords = const [],
@@ -187,13 +488,23 @@ class ATSMetrics {
     this.observations = const [],
   });
 
-  factory ATSMetrics.fromJson(Map<String, dynamic> json) {
+  factory ATSMetrics.fromJson(
+    dynamic json,
+  ) {
+    if (json is! Map) {
+      return const ATSMetrics();
+    }
+
     return ATSMetrics(
-      atsScore: json['ats_score'] ?? 0,
-      detectedKeywords: List<String>.from(json['detected_keywords'] ?? []),
-      missingKeywords: List<String>.from(json['missing_keywords'] ?? []),
-      compatibility: json['compatibility'] ?? '',
-      observations: List<String>.from(json['observations'] ?? []),
+      atsScore: _int(json['ats_score']),
+      detectedKeywords:
+          _stringList(json['detected_keywords']),
+      missingKeywords:
+          _stringList(json['missing_keywords']),
+      compatibility:
+          _string(json['compatibility']),
+      observations:
+          _stringList(json['observations']),
     );
   }
 }
@@ -204,19 +515,28 @@ class LinkedInMetrics {
   final List<String> observations;
   final List<String> recommendations;
 
-  LinkedInMetrics({
+  const LinkedInMetrics({
     this.score = 0,
     this.profileLevel = '',
     this.observations = const [],
     this.recommendations = const [],
   });
 
-  factory LinkedInMetrics.fromJson(Map<String, dynamic> json) {
+  factory LinkedInMetrics.fromJson(
+    dynamic json,
+  ) {
+    if (json is! Map) {
+      return const LinkedInMetrics();
+    }
+
     return LinkedInMetrics(
-      score: json['score'] ?? 0,
-      profileLevel: json['profile_level'] ?? '',
-      observations: List<String>.from(json['observations'] ?? []),
-      recommendations: List<String>.from(json['recommendations'] ?? []),
+      score: _int(json['score']),
+      profileLevel:
+          _string(json['profile_level']),
+      observations:
+          _stringList(json['observations']),
+      recommendations:
+          _stringList(json['recommendations']),
     );
   }
 }
@@ -227,19 +547,27 @@ class CareerMetrics {
   final List<String> areasForImprovement;
   final String employabilityLevel;
 
-  CareerMetrics({
+  const CareerMetrics({
     this.strengths = const [],
     this.weaknesses = const [],
     this.areasForImprovement = const [],
     this.employabilityLevel = '',
   });
 
-  factory CareerMetrics.fromJson(Map<String, dynamic> json) {
+  factory CareerMetrics.fromJson(
+    dynamic json,
+  ) {
+    if (json is! Map) {
+      return const CareerMetrics();
+    }
+
     return CareerMetrics(
-      strengths: List<String>.from(json['strengths'] ?? []),
-      weaknesses: List<String>.from(json['weaknesses'] ?? []),
-      areasForImprovement: List<String>.from(json['areas_for_improvement'] ?? []),
-      employabilityLevel: json['employability_level'] ?? '',
+      strengths: _stringList(json['strengths']),
+      weaknesses: _stringList(json['weaknesses']),
+      areasForImprovement:
+          _stringList(json['areas_for_improvement']),
+      employabilityLevel:
+          _string(json['employability_level']),
     );
   }
 }
@@ -248,26 +576,33 @@ class ProfessionalProfile {
   final String id;
   final String userId;
   final PersonalInfo personalInfo;
+
   final List<Experience> experience;
   final List<Education> education;
+  final List<ContinuousTraining> continuousTraining;
   final Skills skills;
   final List<Language> languages;
   final List<Certification> certifications;
+  final List<Project> projects;
+
   final ATSMetrics atsMetrics;
   final LinkedInMetrics linkedinMetrics;
   final CareerMetrics careerMetrics;
+
   final List<String> cvKeywords;
   final int cvScore;
 
-  ProfessionalProfile({
+  const ProfessionalProfile({
     required this.id,
     this.userId = '',
     required this.personalInfo,
     this.experience = const [],
     this.education = const [],
+    this.continuousTraining = const [],
     required this.skills,
     this.languages = const [],
     this.certifications = const [],
+    this.projects = const [],
     required this.atsMetrics,
     required this.linkedinMetrics,
     required this.careerMetrics,
@@ -275,21 +610,198 @@ class ProfessionalProfile {
     this.cvScore = 0,
   });
 
-  factory ProfessionalProfile.fromJson(Map<String, dynamic> json) {
+  factory ProfessionalProfile.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return ProfessionalProfile(
-      id: json['id'] ?? '',
-      userId: json['user_id'] ?? '',
-      personalInfo: PersonalInfo.fromJson(json['personal_info'] ?? {}),
-      experience: (json['experience'] as List?)?.map((e) => Experience.fromJson(e)).toList() ?? [],
-      education: (json['education'] as List?)?.map((e) => Education.fromJson(e)).toList() ?? [],
-      skills: Skills.fromJson(json['skills'] ?? {}),
-      languages: (json['languages'] as List?)?.map((e) => Language.fromJson(e)).toList() ?? [],
-      certifications: (json['certifications'] as List?)?.map((e) => Certification.fromJson(e)).toList() ?? [],
-      atsMetrics: ATSMetrics.fromJson(json['ats_metrics'] ?? {}),
-      linkedinMetrics: LinkedInMetrics.fromJson(json['linkedin_metrics'] ?? {}),
-      careerMetrics: CareerMetrics.fromJson(json['career_metrics'] ?? {}),
-      cvKeywords: List<String>.from(json['cv_keywords'] ?? []),
-      cvScore: json['cv_score'] ?? 0,
+      id: _string(json['id']),
+      userId: _string(json['user_id']),
+      personalInfo: PersonalInfo.fromJson(
+        _map(json['personal_info']),
+      ),
+      experience: _objectList(
+        json['experience'],
+        Experience.fromJson,
+      ),
+      education: _objectList(
+        json['education'],
+        Education.fromJson,
+      ),
+      continuousTraining: _objectList(
+        json['continuous_training'],
+        ContinuousTraining.fromJson,
+      ),
+      skills: Skills.fromJson(
+        json['skills'],
+      ),
+      languages: _objectList(
+        json['languages'],
+        Language.fromJson,
+      ),
+      certifications: _objectList(
+        json['certifications'],
+        Certification.fromJson,
+      ),
+      projects: _objectList(
+        json['projects'],
+        Project.fromJson,
+      ),
+      atsMetrics: ATSMetrics.fromJson(
+        json['ats_metrics'],
+      ),
+      linkedinMetrics: LinkedInMetrics.fromJson(
+        json['linkedin_metrics'],
+      ),
+      careerMetrics: CareerMetrics.fromJson(
+        json['career_metrics'],
+      ),
+      cvKeywords: _stringList(
+        json['cv_keywords'],
+      ),
+      cvScore: _int(json['cv_score']),
     );
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+String _string(dynamic value) {
+  if (value == null) {
+    return '';
+  }
+
+  return value.toString();
+}
+
+String? _nullableString(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+
+  return value.toString();
+}
+
+int _int(
+  dynamic value, {
+  int defaultValue = 0,
+}) {
+  if (value is int) {
+    return value;
+  }
+
+  if (value is num) {
+    return value.toInt();
+  }
+
+  if (value is String) {
+    return int.tryParse(value) ?? defaultValue;
+  }
+
+  return defaultValue;
+}
+
+double _double(
+  dynamic value, {
+  double defaultValue = 0.0,
+}) {
+  if (value is double) {
+    return value;
+  }
+
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  if (value is String) {
+    return double.tryParse(value) ?? defaultValue;
+  }
+
+  return defaultValue;
+}
+
+double? _nullableDouble(dynamic value) {
+  if (value == null) {
+    return null;
+  }
+
+  if (value is num) {
+    return value.toDouble();
+  }
+
+  if (value is String) {
+    return double.tryParse(value);
+  }
+
+  return null;
+}
+
+bool _bool(dynamic value) {
+  if (value is bool) {
+    return value;
+  }
+
+  if (value is String) {
+    return value.toLowerCase() == 'true';
+  }
+
+  if (value is num) {
+    return value != 0;
+  }
+
+  return false;
+}
+
+Map<String, dynamic> _map(dynamic value) {
+  if (value is Map<String, dynamic>) {
+    return value;
+  }
+
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+
+  return <String, dynamic>{};
+}
+
+List<String> _stringList(dynamic value) {
+  if (value is! List) {
+    return const [];
+  }
+
+  return value.map((item) => item.toString()).toList();
+}
+
+List<Skill> _skillList(dynamic value) {
+  if (value is! List) {
+    return const [];
+  }
+
+  return value
+      .whereType<Map>()
+      .map(
+        (item) => Skill.fromJson(
+          Map<String, dynamic>.from(item),
+        ),
+      )
+      .toList();
+}
+
+List<T> _objectList<T>(
+  dynamic value,
+  T Function(Map<String, dynamic>) factory,
+) {
+  if (value is! List) {
+    return const [];
+  }
+
+  return value
+      .whereType<Map>()
+      .map(
+        (item) => factory(
+          Map<String, dynamic>.from(item),
+        ),
+      )
+      .toList();
 }

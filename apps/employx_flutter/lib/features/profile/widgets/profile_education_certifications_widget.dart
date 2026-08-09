@@ -179,10 +179,9 @@ class ProfileEducationCertificationsWidget
             ? education.institution.trim()
             : 'Institución no disponible';
 
-    final period =
-        education.period.trim().isNotEmpty
-            ? education.period.trim()
-            : '';
+    final period = _buildEducationPeriod(
+      education,
+    );
 
     return Padding(
       padding:
@@ -218,6 +217,30 @@ class ProfileEducationCertificationsWidget
     );
   }
 
+  String _buildEducationPeriod(
+    Education education,
+  ) {
+    final start =
+        education.startDate.trim();
+
+    final end =
+        education.endDate.trim();
+
+    if (start.isEmpty && end.isEmpty) {
+      return '';
+    }
+
+    if (start.isNotEmpty && end.isNotEmpty) {
+      return '$start – $end';
+    }
+
+    if (start.isNotEmpty) {
+      return start;
+    }
+
+    return end;
+  }
+
   Widget _buildCertificationItem(
     BuildContext context,
     Certification certification,
@@ -231,14 +254,12 @@ class ProfileEducationCertificationsWidget
             : 'Certificación';
 
     final provider =
-        certification.provider.trim().isNotEmpty
-            ? certification.provider.trim()
+        certification.issuer.trim().isNotEmpty
+            ? certification.issuer.trim()
             : 'Emisor no disponible';
 
     final date =
-        certification.date.trim().isNotEmpty
-            ? certification.date.trim()
-            : '';
+        certification.date.trim();
 
     return Padding(
       padding:
@@ -309,8 +330,8 @@ class ProfileEducationCertificationsWidget
     final typography = context.liaTypography;
 
     final name =
-        language.language.trim().isNotEmpty
-            ? language.language.trim()
+        language.name.trim().isNotEmpty
+            ? language.name.trim()
             : 'Idioma';
 
     final level =
