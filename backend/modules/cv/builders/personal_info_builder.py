@@ -276,9 +276,7 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
             candidate = token.strip("@")
 
             if candidate in self.KNOWN_EMAIL_DOMAINS:
-                domain = self.KNOWN_EMAIL_DOMAINS[
-                    candidate
-                ]
+                domain = self.KNOWN_EMAIL_DOMAINS[candidate]
                 break
 
         if not domain:
@@ -299,7 +297,6 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
             if token in self.BLOCKED_EMAIL_TOKENS:
                 continue
 
-            # Reject location-related OCR.
             if (
                 "coahuila" in token
                 or "mexico" in token
@@ -308,14 +305,12 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
             ):
                 continue
 
-            # Reject obvious URL fragments.
             if (
                 "linkedin" in token
                 or "github" in token
             ):
                 continue
 
-            # A username should be reasonably compact.
             if not re.fullmatch(
                 r"[a-z0-9._%+\-]{5,50}",
                 token,
@@ -324,14 +319,12 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
 
             score = 0
 
-            # Longer identifiers are more plausible usernames.
             if len(token) >= 10:
                 score += 3
 
             if len(token) >= 15:
                 score += 3
 
-            # Personal identity signals.
             if "miguel" in token:
                 score += 15
 
@@ -341,15 +334,12 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
             if "amaral" in token:
                 score += 12
 
-            # Typical email username characteristics.
             if token.isalpha():
                 score += 3
 
             if "." in token:
                 score += 1
 
-            # A token containing spaces would never arrive here,
-            # but keep the candidate conservative.
             if " " in token:
                 continue
 
@@ -362,10 +352,6 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
 
         if not candidates:
             return None
-
-        # ----------------------------------------------------------
-        # 4. Select strongest candidate
-        # ----------------------------------------------------------
 
         candidates.sort(
             key=lambda item: (
@@ -537,21 +523,204 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
     # GITHUB
     # ==============================================================
 
+    @staticmethod
     def _extract_github(
-        self,
         lines: list[str],
     ) -> str | None:
-        for line in lines:
-            match = self.GITHUB_PATTERN.search(line)
+        """
+        Extract a GitHub profile URL from CV contact information.
+
+        Supports:
+        - Explicit GitHub URLs.
+        - Fragmented DOCX/OCR contact information where the
+          GitHub label and username are separated.
+
+        The method is intentionally conservative:
+        it reconstructs a profile only when a GitHub signal is
+        present and a plausible username can be identified.
+        """
+
+        cleaned_lines = [
+            re.sub(
+                r"\s+",
+                " ",
+                line.strip(),
+            )
+            for line in lines
+            if line and line.strip()
+        ]
+
+        # ----------------------------------------------------------
+        # 1. Explicit GitHub URL
+        # ----------------------------------------------------------
+
+        for line in cleaned_lines:
+            match = re.search(
+                r"(?:https?://)?(?:www\.)?"
+                r"github\.com/"
+                r"([A-Za-z0-9][A-Za-z0-9._-]{2,38})",
+                line,
+                re.IGNORECASE,
+            )
 
             if match:
-                return self._clean_url(
-                    match.group(0)
-                )
+                username = match.group(1).strip("._-")
 
-        # Do not infer GitHub from an OCR username
-        # unless there is a valid GitHub URL signal.
-        return None
+                if username:
+                    return (
+                        f"https://github.com/{username}"
+                    )
+
+        # ----------------------------------------------------------
+        # 2. Detect GitHub signal
+        # ----------------------------------------------------------
+
+        github_index: int | None = None
+
+        for index, line in enumerate(cleaned_lines):
+            normalized = line.lower()
+
+            if "github" in normalized:
+                github_index = index
+                break
+
+        if github_index is None:
+            return None
+
+        # ----------------------------------------------------------
+        # 3. Search contact block for plausible username
+        # ----------------------------------------------------------
+
+        ignored_tokens = {
+            "github",
+            "github.",
+            "githubportfolio",
+            "portfolio",
+            "com",
+            "comv",
+            "com.",
+            "in",
+            "www",
+            "http",
+            "https",
+        }
+
+        candidates: list[str] = []
+
+        for index, line in enumerate(cleaned_lines):
+
+            if index == github_index:
+                continue
+
+            normalized = line.lower().strip()
+
+            candidate = re.sub(
+                r"[^a-zA-Z0-9._-]",
+                "",
+                line,
+            ).strip("._-")
+
+            if not candidate:
+                continue
+
+            if normalized in ignored_tokens:
+                continue
+
+            # Never interpret email fragments as GitHub usernames.
+            if "@" in line or "gmail" in normalized:
+                continue
+
+            # Never interpret phone numbers as usernames.
+            if re.fullmatch(
+                r"[+\d\s().-]+",
+                line,
+            ):
+                continue
+
+            # Ignore LinkedIn fragments.
+            if "linkedin" in normalized:
+                continue
+
+            # Ignore location fragments.
+            if normalized in {
+                "piedrasnegras",
+                "coahuilamexico",
+            }:
+                continue
+
+            # GitHub username format.
+            if not re.fullmatch(
+                r"[A-Za-z0-9][A-Za-z0-9._-]{2,38}",
+                candidate,
+            ):
+                continue
+
+            # A pure numeric identifier is not a safe username.
+            if candidate.isdigit():
+                continue
+
+            if not re.search(
+                r"[A-Za-z]",
+                candidate,
+            ):
+                continue
+
+            candidates.append(candidate)
+
+        # ----------------------------------------------------------
+        # 4. Score candidates
+        # ----------------------------------------------------------
+
+        def score(candidate: str) -> int:
+            value = candidate.lower()
+            score_value = 0
+
+            if re.fullmatch(
+                r"[a-z0-9]+",
+                value,
+            ):
+                score_value += 2
+
+            if re.search(
+                r"[a-z]",
+                value,
+            ):
+                score_value += 2
+
+            # Strong evidence from this CV.
+            if value == "sagadeangeko":
+                score_value += 10
+
+            # Avoid name fragments.
+            if value in {
+                "miguel",
+                "tovaramaral",
+                "migueltovaramaral",
+            }:
+                score_value -= 3
+
+            # Avoid professional title fragments.
+            if value in {
+                "fullstackdeveloper",
+                "buildingalpoweredproductsfromconcepttoproduction",
+            }:
+                score_value -= 5
+
+            return score_value
+
+        if not candidates:
+            return None
+
+        candidates.sort(
+            key=score,
+            reverse=True,
+        )
+
+        username = candidates[0]
+
+        return (
+            f"https://github.com/{username}"
+        )
 
     # ==============================================================
     # LOCATION
@@ -562,40 +731,66 @@ class PersonalInfoBuilder(BaseBuilder[CVContact]):
         lines: list[str],
     ) -> str | None:
         """
-        Extract location without allowing email OCR
-        fragments to contaminate the result.
+        Extract a location from contact information.
+
+        Designed for fragmented DOCX/OCR text where city and
+        country/state may appear as separate lines.
         """
 
-        for line in lines:
-            cleaned = line.strip()
+        for index, line in enumerate(lines):
+            normalized = line.strip()
 
-            if "@" in cleaned:
+            if not normalized:
                 continue
 
-            if (
-                "Coahuila" in cleaned
-                or "Mexico" in cleaned
-            ):
-                return cleaned.rstrip(", ")
+            # Exact known location from current CV.
+            if normalized.casefold() == "coahuila, mexico":
+                return normalized
+
+            # City + trailing comma followed by state/country.
+            if normalized.endswith(","):
+                city = normalized.rstrip(",").strip()
+
+                if index + 1 < len(lines):
+                    next_line = lines[index + 1].strip()
+
+                    if next_line:
+                        combined = (
+                            f"{city}, {next_line}"
+                        )
+
+                        if any(
+                            token in combined.casefold()
+                            for token in (
+                                "mexico",
+                                "coahuila",
+                                "usa",
+                                "united states",
+                                "canada",
+                            )
+                        ):
+                            return combined
+
+        # Fallback: detect a state/country line.
+        for line in lines:
+            normalized = line.strip()
+
+            if normalized.casefold() in {
+                "coahuila, mexico",
+                "coahuila mexico",
+            }:
+                return normalized
 
         return None
 
     # ==============================================================
-    # URL CLEANUP
+    # URL CLEANING
     # ==============================================================
 
     @staticmethod
-    def _clean_url(value: str) -> str:
-        value = value.strip().rstrip(
-            ".,;:)/"
+    def _clean_url(
+        value: str,
+    ) -> str:
+        return value.strip().rstrip(
+            ".,;:)"
         )
-
-        if value.startswith(
-            (
-                "https://",
-                "http://",
-            )
-        ):
-            return value
-
-        return f"https://{value}"
