@@ -65,10 +65,7 @@ class _ATSAnalyzerPanelState extends State<ATSAnalyzerPanel> {
                   color: colors.success.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(
-                  Icons.document_scanner_outlined,
-                  color: colors.success,
-                ),
+                child: Icon(Icons.document_scanner_outlined, color: colors.success),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -86,30 +83,25 @@ class _ATSAnalyzerPanelState extends State<ATSAnalyzerPanel> {
                     const SizedBox(height: 3),
                     Text(
                       'Analizador de Vacante',
-                      style: typography.h3.copyWith(
-                        color: colors.textPrimary,
-                      ),
+                      style: typography.h3.copyWith(color: colors.textPrimary),
                     ),
                   ],
                 ),
               ),
-              if (result != null)
-                _ScoreBadge(score: result.score),
+              if (result != null) _ScoreBadge(score: result.score),
             ],
           ),
           SizedBox(height: spacings.lg),
           Text(
             'Compara tu perfil contra una vacante específica y explica dónde existe coincidencia o brecha.',
-            style: typography.bodySmall.copyWith(
-              color: colors.textSecondary,
-              height: 1.45,
-            ),
+            style: typography.bodySmall.copyWith(color: colors.textSecondary, height: 1.45),
           ),
           SizedBox(height: spacings.lg),
           TextField(
             controller: _jobController,
             minLines: 5,
             maxLines: 9,
+            onChanged: (_) => setState(() {}),
             style: typography.bodySmall.copyWith(color: colors.textPrimary),
             decoration: InputDecoration(
               hintText: 'Pega aquí la descripción de la vacante...',
@@ -172,7 +164,6 @@ class _ATSAnalyzerPanelState extends State<ATSAnalyzerPanel> {
 
 class _ScoreBadge extends StatelessWidget {
   final int score;
-
   const _ScoreBadge({required this.score});
 
   @override
@@ -187,11 +178,7 @@ class _ScoreBadge extends StatelessWidget {
       ),
       child: Text(
         '$score / 100',
-        style: TextStyle(
-          color: colors.success,
-          fontSize: 18,
-          fontWeight: FontWeight.w800,
-        ),
+        style: TextStyle(color: colors.success, fontSize: 18, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -199,7 +186,6 @@ class _ScoreBadge extends StatelessWidget {
 
 class _BreakdownGrid extends StatelessWidget {
   final ATSAnalysisResult result;
-
   const _BreakdownGrid({required this.result});
 
   @override
@@ -215,9 +201,7 @@ class _BreakdownGrid extends StatelessWidget {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
-      children: items.map((item) {
-        return _MiniScore(label: item.$1, value: item.$2);
-      }).toList(),
+      children: items.map((item) => _MiniScore(label: item.$1, value: item.$2)).toList(),
     );
   }
 }
@@ -225,7 +209,6 @@ class _BreakdownGrid extends StatelessWidget {
 class _MiniScore extends StatelessWidget {
   final String label;
   final int value;
-
   const _MiniScore({required this.label, required this.value});
 
   @override
@@ -315,7 +298,6 @@ class _KeywordSection extends StatelessWidget {
 
 class _Recommendations extends StatelessWidget {
   final ATSAnalysisResult result;
-
   const _Recommendations({required this.result});
 
   @override
