@@ -11,6 +11,7 @@ import 'core/actions/system_actions.dart';
 
 import 'features/dashboard/views/command_center_wow_screen.dart';
 import 'features/profile/views/professional_profile_screen.dart';
+import 'features/vacancies/views/vacancies_screen.dart';
 import 'core/ui/feature_in_progress.dart';
 import 'core/providers/mission_provider.dart';
 import 'core/providers/upload_provider.dart';
@@ -33,7 +34,7 @@ void main() {
 }
 
 class LiaEmployXApp extends StatelessWidget {
-  const LiaEmployXApp({Key? key}) : super(key: key);
+  const LiaEmployXApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +48,7 @@ class LiaEmployXApp extends StatelessWidget {
 }
 
 class _AppRoot extends StatefulWidget {
-  const _AppRoot({Key? key}) : super(key: key);
+  const _AppRoot({super.key});
 
   @override
   State<_AppRoot> createState() => _AppRootState();
@@ -64,7 +65,7 @@ class _AppRootState extends State<_AppRoot> {
     FeatureInProgressWidget(featureName: 'Mission Center'),       // 4
     FeatureInProgressWidget(featureName: 'Agent Hub'),            // 5
     FeatureInProgressWidget(featureName: 'Knowledge Base'),       // 6
-    FeatureInProgressWidget(featureName: 'Vacantes'),              // 7
+    VacanciesScreen(),                                             // 7 - Vacantes / Job Hunter
     FeatureInProgressWidget(featureName: 'Dashboard'),            // 8
   ];
 
