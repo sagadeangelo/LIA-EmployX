@@ -9,7 +9,7 @@ import 'core/actions/mission_actions.dart';
 import 'core/actions/command_actions.dart';
 import 'core/actions/system_actions.dart';
 
-import 'features/dashboard/views/command_center_screen.dart';
+import 'features/dashboard/views/command_center_wow_screen.dart';
 import 'features/profile/views/professional_profile_screen.dart';
 import 'core/ui/feature_in_progress.dart';
 import 'core/providers/mission_provider.dart';
@@ -57,14 +57,14 @@ class _AppRootState extends State<_AppRoot> {
   int _selectedIndex = 0;
 
   final List<Widget> _screens = const [
-    CommandCenterScreen(),                                      // 0 - Centro de Comando
-    ProfessionalProfileScreen(),                                // 1 - Perfil Profesional
+    CommandCenterWowScreen(),                                      // 0 - Centro de Comando
+    ProfessionalProfileScreen(),                                  // 1 - Perfil Profesional
     FeatureInProgressWidget(featureName: 'Objetivo Profesional'), // 2
     FeatureInProgressWidget(featureName: 'Mission Timeline'),     // 3
     FeatureInProgressWidget(featureName: 'Mission Center'),       // 4
     FeatureInProgressWidget(featureName: 'Agent Hub'),            // 5
     FeatureInProgressWidget(featureName: 'Knowledge Base'),       // 6
-    FeatureInProgressWidget(featureName: 'Vacantes'),             // 7
+    FeatureInProgressWidget(featureName: 'Vacantes'),              // 7
     FeatureInProgressWidget(featureName: 'Dashboard'),            // 8
   ];
 
