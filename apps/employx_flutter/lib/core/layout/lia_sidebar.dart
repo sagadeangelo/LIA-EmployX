@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../theme/lia_theme.dart';
 
 class LiaSidebar extends StatelessWidget {
@@ -30,46 +31,84 @@ class LiaSidebar extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.surface,
         border: Border(
-          right: BorderSide(color: colors.border, width: 1),
+          right: BorderSide(
+            color: colors.border,
+            width: 1,
+          ),
         ),
       ),
       child: Column(
         children: [
-          // Logo & Toggle Area
-          Container(
+          // ============================================================
+          // LOGO / TOGGLE
+          // ============================================================
+          SizedBox(
             height: 72,
-            padding: EdgeInsets.symmetric(horizontal: spacings.md),
-            child: Row(
-              mainAxisAlignment: isCollapsed 
-                ? MainAxisAlignment.center 
-                : MainAxisAlignment.spaceBetween,
-              children: [
-                if (!isCollapsed)
-                  Text(
-                    'LIA-EmployX',
-                    style: typography.h2.copyWith(
-                      color: colors.textPrimary,
-                      letterSpacing: 2,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: isCollapsed ? 0 : spacings.md,
+              ),
+              child: isCollapsed
+                  ? Center(
+                      child: IconButton(
+                        constraints: const BoxConstraints(
+                          minWidth: 40,
+                          minHeight: 40,
+                          maxWidth: 40,
+                          maxHeight: 40,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          Icons.menu,
+                          color: colors.textSecondary,
+                        ),
+                        onPressed: onToggle,
+                        tooltip: 'Expandir',
+                      ),
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'LIA-EmployX',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: typography.h2.copyWith(
+                              color: colors.textPrimary,
+                              letterSpacing: 2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          constraints: const BoxConstraints(
+                            minWidth: 40,
+                            minHeight: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            Icons.chevron_left,
+                            color: colors.textSecondary,
+                          ),
+                          onPressed: onToggle,
+                          tooltip: 'Colapsar',
+                        ),
+                      ],
                     ),
-                  ),
-                IconButton(
-                  icon: Icon(
-                    isCollapsed ? Icons.menu : Icons.chevron_left,
-                    color: colors.textSecondary,
-                  ),
-                  onPressed: onToggle,
-                  tooltip: isCollapsed ? 'Expandir' : 'Colapsar',
-                ),
-              ],
             ),
           ),
-          
+
           SizedBox(height: spacings.lg),
 
-          // Menu Items
+          // ============================================================
+          // MENU
+          // ============================================================
           Expanded(
             child: ListView(
-              padding: EdgeInsets.symmetric(horizontal: spacings.sm),
+              padding: EdgeInsets.symmetric(
+                horizontal: isCollapsed ? 8 : spacings.sm,
+              ),
               children: [
                 _SidebarItem(
                   icon: Icons.home_outlined,
@@ -138,39 +177,78 @@ class LiaSidebar extends StatelessWidget {
             ),
           ),
 
-          // User Profile Area at bottom
+          // ============================================================
+          // USER PROFILE
+          // ============================================================
           Padding(
-            padding: EdgeInsets.all(spacings.md),
-            child: Row(
-              mainAxisAlignment: isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: colors.surfaceHover,
-                  child: Text('MT', style: typography.caption),
-                ),
-                if (!isCollapsed) ...[
-                  SizedBox(width: spacings.sm),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text('Miguel Tovar', style: typography.bodySmall, overflow: TextOverflow.ellipsis),
-                        Text('Premium', style: typography.caption.copyWith(color: colors.accentPrimary)),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.settings_outlined, size: 18, color: colors.textSecondary),
-                ],
-              ],
+            padding: EdgeInsets.all(
+              isCollapsed ? 8 : spacings.md,
             ),
+            child: isCollapsed
+                ? Center(
+                    child: Tooltip(
+                      message: 'Miguel Tovar — Premium',
+                      child: CircleAvatar(
+                        radius: 16,
+                        backgroundColor: colors.surfaceHover,
+                        child: Text(
+                          'MT',
+                          style: typography.caption,
+                        ),
+                      ),
+                    ),
+                  )
+                : Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 16,
+                        backgroundColor: colors.surfaceHover,
+                        child: Text(
+                          'MT',
+                          style: typography.caption,
+                        ),
+                      ),
+                      SizedBox(width: spacings.sm),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Miguel Tovar',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: typography.bodySmall,
+                            ),
+                            Text(
+                              'Premium',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: typography.caption.copyWith(
+                                color: colors.accentPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.settings_outlined,
+                        size: 18,
+                        color: colors.textSecondary,
+                      ),
+                    ],
+                  ),
           ),
         ],
       ),
     );
   }
 }
+
+// ==========================================================================
+// SIDEBAR ITEM
+// ==========================================================================
 
 class _SidebarItem extends StatefulWidget {
   final IconData icon;
@@ -200,51 +278,85 @@ class _SidebarItemState extends State<_SidebarItem> {
     final spacings = context.liaSpacings;
     final typography = context.liaTypography;
 
-    final Color bgColor = widget.isSelected 
-        ? colors.surfaceHover 
-        : (_isHovered ? colors.surfaceHover.withValues(alpha: 0.5) : Colors.transparent);
-    
-    final Color iconColor = widget.isSelected 
-        ? colors.textPrimary 
+    final Color bgColor = widget.isSelected
+        ? colors.surfaceHover
+        : (_isHovered
+            ? colors.surfaceHover.withValues(alpha: 0.5)
+            : Colors.transparent);
+
+    final Color iconColor = widget.isSelected
+        ? colors.textPrimary
         : colors.textSecondary;
 
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _isHovered = true),
-      onExit: (_) => setState(() => _isHovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          margin: EdgeInsets.only(bottom: spacings.xs),
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.isCollapsed ? 0 : spacings.md,
-            vertical: spacings.sm,
-          ),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: spacings.radiusMd,
-          ),
-          child: Row(
-            mainAxisAlignment: widget.isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
-            children: [
-              Icon(widget.icon, color: iconColor, size: 20),
-              if (!widget.isCollapsed) ...[
+    final Widget item = AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      margin: EdgeInsets.only(
+        bottom: spacings.xs,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: widget.isCollapsed ? 0 : spacings.md,
+        vertical: spacings.sm,
+      ),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: spacings.radiusMd,
+      ),
+      child: widget.isCollapsed
+          ? Center(
+              child: Icon(
+                widget.icon,
+                color: iconColor,
+                size: 20,
+              ),
+            )
+          : Row(
+              children: [
+                Icon(
+                  widget.icon,
+                  color: iconColor,
+                  size: 20,
+                ),
                 SizedBox(width: spacings.md),
                 Expanded(
                   child: Text(
                     widget.label,
-                    style: typography.bodyMedium.copyWith(
-                      color: widget.isSelected ? colors.textPrimary : colors.textSecondary,
-                      fontWeight: widget.isSelected ? FontWeight.w500 : FontWeight.w400,
-                    ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    style: typography.bodyMedium.copyWith(
+                      color: widget.isSelected
+                          ? colors.textPrimary
+                          : colors.textSecondary,
+                      fontWeight: widget.isSelected
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                    ),
                   ),
                 ),
               ],
-            ],
-          ),
-        ),
+            ),
+    );
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        setState(() {
+          _isHovered = true;
+        });
+      },
+      onExit: (_) {
+        setState(() {
+          _isHovered = false;
+        });
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: widget.isCollapsed
+            ? Tooltip(
+                message: widget.label,
+                waitDuration: const Duration(milliseconds: 350),
+                child: item,
+              )
+            : item,
       ),
     );
   }

@@ -476,7 +476,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   Widget build(BuildContext context) {
     final colors = context.liaColors;
     final spacings = context.liaSpacings;
-
     final missionProvider = context.watch<MissionProvider>();
     final missionActions = context.watch<MissionActions>();
     final snapshot = missionProvider.snapshot;
@@ -486,7 +485,120 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       backgroundColor: colors.background,
       body: Stack(
         children: [
-          // Dark tech background
+          _buildCommandBackground(context),
+          SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              spacings.xl,
+              spacings.lg,
+              spacings.xl,
+              spacings.xxl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildCommandHero(
+                  context,
+                  snapshot: snapshot,
+                  hasMission: hasMission,
+                ),
+                SizedBox(height: spacings.lg),
+                _buildCommandTelemetry(context, snapshot),
+                SizedBox(height: spacings.xl),
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final compact = constraints.maxWidth < 1100;
+
+                    if (compact) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildMissionStatus(context, snapshot),
+                          SizedBox(height: spacings.lg),
+                          _buildRuntimeHealth(context, snapshot),
+                          SizedBox(height: spacings.lg),
+                          _buildCareerHealth(context, snapshot),
+                          SizedBox(height: spacings.lg),
+                          _buildMetricsPanel(
+                            context,
+                            hasMission,
+                            missionActions.currentProfile,
+                          ),
+                          SizedBox(height: spacings.lg),
+                          _buildAgentReadiness(context),
+                          SizedBox(height: spacings.lg),
+                          _buildActivityTimeline(context, snapshot),
+                          SizedBox(height: spacings.lg),
+                          _buildRoadmap(context),
+                        ],
+                      );
+                    }
+
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          flex: 34,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildMissionStatus(context, snapshot),
+                              SizedBox(height: spacings.lg),
+                              _buildRuntimeHealth(context, snapshot),
+                              SizedBox(height: spacings.lg),
+                              _buildCareerHealth(context, snapshot),
+                              SizedBox(height: spacings.lg),
+                              _buildRoadmap(context),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: spacings.xl),
+                        Expanded(
+                          flex: 66,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildMetricsPanel(
+                                context,
+                                hasMission,
+                                missionActions.currentProfile,
+                              ),
+                              SizedBox(height: spacings.lg),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: _buildAgentReadiness(context),
+                                  ),
+                                  SizedBox(width: spacings.lg),
+                                  Expanded(
+                                    child: _buildActivityTimeline(
+                                      context,
+                                      snapshot,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCommandBackground(BuildContext context) {
+    final colors = context.liaColors;
+
+    return IgnorePointer(
+      child: Stack(
+        children: [
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -494,64 +606,379 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 end: Alignment.bottomRight,
                 colors: [
                   colors.background,
-                  colors.background.withValues(alpha: 0.95),
-                  const Color(0xFF0D1B2A),
+                  colors.background.withValues(alpha: 0.96),
+                  const Color(0xFF0B1220),
+                  const Color(0xFF10091A),
                 ],
               ),
             ),
           ),
+          Positioned(
+            top: -180,
+            right: -120,
+            child: Container(
+              width: 420,
+              height: 420,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.accentPrimary.withValues(alpha: 0.06),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -220,
+            left: -140,
+            child: Container(
+              width: 500,
+              height: 500,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: colors.accentTertiary.withValues(alpha: 0.045),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-          // Two-column layout
-          Padding(
-            padding: EdgeInsets.all(spacings.xl),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // LEFT COLUMN (35%)
-                Expanded(
-                  flex: 35,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildMissionStatus(context, snapshot),
-                        SizedBox(height: spacings.lg),
-                        _buildRuntimeHealth(context, snapshot),
-                        SizedBox(height: spacings.lg),
-                        _buildCareerHealth(context, snapshot),
-                        SizedBox(height: spacings.lg),
-                        _buildRoadmap(context),
-                      ],
+  Widget _buildCommandHero(
+    BuildContext context, {
+    required dynamic snapshot,
+    required bool hasMission,
+  }) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    final mission = snapshot?.mission;
+    final status = mission?.status ?? 'STANDBY';
+    final active = snapshot != null &&
+        const [
+          'CREATED',
+          'UPLOADING',
+          'STORED',
+          'QUEUED',
+          'PROCESSING',
+          'WAITING_AGENT',
+          'RUNNING',
+        ].contains(status);
+
+    final accent = status == 'FAILED'
+        ? colors.error
+        : active
+            ? colors.accentPrimary
+            : colors.success;
+
+    return LiaGlassPanel(
+      hasGlow: true,
+      glowColor: accent,
+      padding: EdgeInsets.all(spacings.xl),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+
+          final identity = Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: accent.withValues(alpha: 0.12),
+                  border: Border.all(color: accent.withValues(alpha: 0.35)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.16),
+                      blurRadius: 22,
+                      spreadRadius: 1,
                     ),
+                  ],
+                ),
+                child: Icon(Icons.hub_outlined, color: accent, size: 30),
+              ),
+              SizedBox(width: spacings.md),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'LIA CAREER OS',
+                      style: typography.caption.copyWith(
+                        color: accent,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'CENTRO DE COMANDO',
+                      style: typography.h2.copyWith(
+                        color: colors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          final statusCard = Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: colors.background.withValues(alpha: 0.38),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: accent.withValues(alpha: 0.22)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: accent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: accent.withValues(alpha: 0.65),
+                        blurRadius: 9,
+                      ),
+                    ],
                   ),
                 ),
-                SizedBox(width: spacings.xl),
-                // RIGHT COLUMN (65%)
-                Expanded(
-                  flex: 65,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildMetricsPanel(context, hasMission, missionActions.currentProfile),
-                        SizedBox(height: spacings.lg),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 1,
-                              child: _buildAgentReadiness(context),
-                            ),
-                            SizedBox(width: spacings.lg),
-                            Expanded(
-                              flex: 1,
-                              child: _buildActivityTimeline(context, snapshot),
-                            ),
-                          ],
+                const SizedBox(width: 10),
+                Text(
+                  status,
+                  style: typography.caption.copyWith(
+                    color: colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          );
+
+          final description = Text(
+            hasMission
+                ? 'Misión activa conectada al runtime. LIA está procesando tu trayectoria profesional.'
+                : 'Tu estación de control profesional está lista. Carga tu CV para iniciar una nueva misión.',
+            style: typography.bodyMedium.copyWith(
+              color: colors.textSecondary,
+              height: 1.45,
+            ),
+          );
+
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                identity,
+                SizedBox(height: spacings.lg),
+                statusCard,
+                SizedBox(height: spacings.md),
+                description,
+                SizedBox(height: spacings.lg),
+                if (!hasMission)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _pickAndUploadCV,
+                      icon: const Icon(Icons.upload_file_outlined),
+                      label: const Text('INICIAR ANÁLISIS'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accent,
+                        foregroundColor: colors.background,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ],
+                      ),
                     ),
                   ),
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    identity,
+                    SizedBox(height: spacings.md),
+                    description,
+                  ],
+                ),
+              ),
+              SizedBox(width: spacings.xl),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  statusCard,
+                  if (!hasMission) ...[
+                    SizedBox(height: spacings.md),
+                    SizedBox(
+                      height: 46,
+                      child: ElevatedButton.icon(
+                        onPressed: _pickAndUploadCV,
+                        icon: const Icon(Icons.upload_file_outlined, size: 18),
+                        label: const Text('INICIAR ANÁLISIS'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: accent,
+                          foregroundColor: colors.background,
+                          padding: const EdgeInsets.symmetric(horizontal: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCommandTelemetry(BuildContext context, dynamic snapshot) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+    final spacings = context.liaSpacings;
+
+    final progress = snapshot?.progress ?? 0;
+    final agents = snapshot?.runtime.activeAgents.length ?? 0;
+    final events = snapshot?.timeline.length ?? 0;
+    final currentStep = snapshot?.currentStep ?? 'Esperando misión';
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 850;
+        final cards = [
+          _buildTelemetryCard(
+            context,
+            icon: Icons.track_changes,
+            label: 'MISSION PROGRESS',
+            value: '$progress%',
+            detail: currentStep,
+          ),
+          _buildTelemetryCard(
+            context,
+            icon: Icons.smart_toy_outlined,
+            label: 'ACTIVE AGENTS',
+            value: '$agents',
+            detail: agents == 0 ? 'Runtime en standby' : 'Agentes conectados',
+          ),
+          _buildTelemetryCard(
+            context,
+            icon: Icons.bolt_outlined,
+            label: 'EVENT STREAM',
+            value: '$events',
+            detail: events == 0 ? 'Sin eventos todavía' : 'Eventos registrados',
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            children: [
+              cards[0],
+              SizedBox(height: spacings.sm),
+              cards[1],
+              SizedBox(height: spacings.sm),
+              cards[2],
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: cards[0]),
+            SizedBox(width: spacings.sm),
+            Expanded(child: cards[1]),
+            SizedBox(width: spacings.sm),
+            Expanded(child: cards[2]),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTelemetryCard(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required String value,
+    required String detail,
+  }) {
+    final colors = context.liaColors;
+    final typography = context.liaTypography;
+
+    return Container(
+      constraints: const BoxConstraints(minHeight: 92),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: 0.72),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colors.border.withValues(alpha: 0.8)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.accentPrimary.withValues(alpha: 0.09),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: colors.accentPrimary, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style: typography.caption.copyWith(
+                    color: colors.textMuted,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.0,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        value,
+                        style: typography.h3.copyWith(
+                          color: colors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        detail,
+                        style: typography.caption.copyWith(
+                          color: colors.textSecondary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
