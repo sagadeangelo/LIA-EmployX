@@ -34,9 +34,8 @@ class ATSAnalysisResult {
 
 /// Deterministic, explainable ATS-style matcher.
 ///
-/// This is intentionally a job-specific match score, not a claim about how
-/// any particular employer ATS scores candidates. The job description is the
-/// source of truth for the comparison.
+/// This is a job-specific compatibility score. It does not claim to reproduce
+/// any employer's proprietary ATS scoring algorithm.
 class ATSAnalyzer {
   const ATSAnalyzer();
 
@@ -46,7 +45,7 @@ class ATSAnalyzer {
   ) {
     final jobText = _normalize(jobDescription);
 
-    if (jobText.trim().isEmpty) {
+    if (jobText.isEmpty) {
       return const ATSAnalysisResult(
         score: 0,
         breakdown: ATSBreakdown(
@@ -210,12 +209,12 @@ class ATSAnalyzer {
 
     final roleTokens = role
         .split(RegExp(r'\s+'))
-        .where((t) => t.length >= 3 && !_stopWords.contains(t));
-    final total = roleTokens.length;
-    if (total == 0) return 35;
+        .where((t) => t.length >= 3 && !_stopWords.contains(t))
+        .toList();
+    if (roleTokens.isEmpty) return 35;
 
     final hits = roleTokens.where((t) => jobText.contains(t)).length;
-    return ((hits / total) * 100).round().clamp(0, 100);
+    return _clampInt((hits / roleTokens.length) * 100);
   }
 
   int _experienceScore(ProfessionalProfile profile, String jobText) {
@@ -230,7 +229,7 @@ class ATSAnalyzer {
       );
     }).length;
 
-    return ((relevant / profile.experience.length) * 100).round().clamp(0, 100);
+    return _clampInt((relevant / profile.experience.length) * 100);
   }
 
   int _educationScore(ProfessionalProfile profile, String jobText) {
@@ -248,8 +247,8 @@ class ATSAnalyzer {
         .toSet();
     if (tokens.isEmpty) return 25;
 
-    final hits = tokens.where(jobText.contains).length;
-    return ((hits / tokens.length) * 100).round().clamp(0, 100);
+    final hits = tokens.where((token) => jobText.contains(token)).length;
+    return _clampInt((hits / tokens.length) * 100);
   }
 
   bool _containsTerm(String corpus, String term) {
@@ -257,8 +256,9 @@ class ATSAnalyzer {
     if (term.contains(' ') || term.contains('/') || term.contains('+')) {
       return corpus.contains(term);
     }
-    return RegExp(r'(^|[^a-z0-9+#])' + RegExp.escape(term) + r'([^a-z0-9+#]|$)')
-        .hasMatch(corpus);
+    return RegExp(
+      r'(^|[^a-z0-9+#])' + RegExp.escape(term) + r'([^a-z0-9+#]|$)',
+    ).hasMatch(corpus);
   }
 
   String _normalize(String value) {
@@ -274,7 +274,7 @@ class ATSAnalyzer {
         .trim();
   }
 
-  int _clampInt(double value) => value.round().clamp(0, 100);
+  int _clampInt(double value) => value.round().clamp(0, 100).toInt();
 
   static const Set<String> _stopWords = {
     'the', 'and', 'for', 'with', 'from', 'that', 'this', 'are', 'you', 'your',
