@@ -5,6 +5,8 @@ import '../../../core/theme/lia_theme.dart';
 import '../../../core/actions/mission_actions.dart';
 import '../../../core/ui/lia_glass_panel.dart';
 
+import '../services/ats_analyzer.dart';
+import '../widgets/ats_analyzer_panel.dart';
 import '../widgets/profile_hero_header.dart';
 import '../widgets/profile_summary_widget.dart';
 import '../widgets/profile_metrics_radar_widget.dart';
@@ -70,6 +72,14 @@ class ProfessionalProfileScreen extends StatelessWidget {
                     ),
 
                     ProfileSummaryWidget(
+                      profile: profile,
+                    ),
+
+                    SizedBox(
+                      height: spacings.xl,
+                    ),
+
+                    ATSAnalyzerPanel(
                       profile: profile,
                     ),
 
