@@ -11,9 +11,9 @@ de documento.
 ===============================================================
 """
 
-from .readers.pdf_reader import PDFReader
-from .readers.docx_reader import DocxReader
-from .readers.image_reader import ImageReader
+from .pdf_reader import PDFReader
+from .docx_reader import DOCXReader
+from .image_reader import ImageReader
 
 
 class ReaderFactory:
@@ -25,7 +25,7 @@ class ReaderFactory:
 
     _READERS = {
         "pdf": PDFReader,
-        "docx": DocxReader,
+        "docx": DOCXReader,
         "image": ImageReader,
     }
 

@@ -8,6 +8,9 @@ class LiaGlassPanel extends StatelessWidget {
   final double blurSigma;
   final double opacity;
   final BorderRadius? borderRadius;
+  final bool hasGlow;
+  final Color? glowColor;
+  final VoidCallback? onTap;
 
   const LiaGlassPanel({
     Key? key,
@@ -16,6 +19,9 @@ class LiaGlassPanel extends StatelessWidget {
     this.blurSigma = 10.0,
     this.opacity = 0.7,
     this.borderRadius,
+    this.hasGlow = false,
+    this.glowColor,
+    this.onTap,
   }) : super(key: key);
 
   @override
@@ -24,24 +30,48 @@ class LiaGlassPanel extends StatelessWidget {
     final spacings = context.liaSpacings;
     
     final radius = borderRadius ?? spacings.radiusLg;
+    final baseColor = glowColor ?? colors.accentPrimary;
 
-    return ClipRRect(
-      borderRadius: radius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: Container(
-          padding: padding ?? EdgeInsets.all(spacings.lg),
-          decoration: BoxDecoration(
-            color: colors.surface.withOpacity(opacity),
-            borderRadius: radius,
-            border: Border.all(
-              color: Colors.white.withOpacity(0.05),
-              width: 1,
-            ),
+    Widget content = Container(
+      decoration: BoxDecoration(
+        color: colors.surface.withValues(alpha: opacity),
+        borderRadius: radius,
+        border: Border.all(
+          color: hasGlow ? baseColor.withValues(alpha: 0.5) : colors.border,
+          width: 1,
+        ),
+        boxShadow: hasGlow
+            ? [
+                BoxShadow(
+                  color: baseColor.withValues(alpha: 0.15),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                )
+              ]
+            : [],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+          child: Padding(
+            padding: padding ?? EdgeInsets.all(spacings.lg),
+            child: child,
           ),
-          child: child,
         ),
       ),
     );
+
+    if (onTap != null) {
+      return MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: onTap,
+          child: content,
+        ),
+      );
+    }
+
+    return content;
   }
 }

@@ -4,7 +4,7 @@ import '../../../core/theme/lia_theme.dart';
 import '../models/agent_models.dart';
 import '../models/agent_activity.dart';
 import '../widgets/agent_card.dart';
-import 'marketplace_screen.dart';
+import 'agent_hub_screen.dart';
 
 class AiTeamScreen extends StatefulWidget {
   const AiTeamScreen({Key? key}) : super(key: key);
@@ -345,7 +345,7 @@ class _AiTeamScreenState extends State<AiTeamScreen> {
                     Navigator.push(
                       context,
                       PageRouteBuilder(
-                        pageBuilder: (context, animation, secondaryAnimation) => const MarketplaceScreen(),
+                        pageBuilder: (context, animation, secondaryAnimation) => const AgentHubScreen(),
                         transitionsBuilder: (context, animation, secondaryAnimation, child) {
                           return FadeTransition(opacity: animation, child: child);
                         },

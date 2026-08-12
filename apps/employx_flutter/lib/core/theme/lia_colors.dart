@@ -51,6 +51,18 @@ class LiaColors extends ThemeExtension<LiaColors> {
   
   /// Color para acciones destructivas o errores
   final Color error;
+  
+  /// Color para éxito (Verde neón)
+  final Color success;
+  
+  /// Color para avisos (Naranja)
+  final Color warning;
+  
+  /// Color para información (Turquesa)
+  final Color info;
+  
+  /// Color terciario
+  final Color accentTertiary;
 
   const LiaColors({
     required this.background,
@@ -64,6 +76,10 @@ class LiaColors extends ThemeExtension<LiaColors> {
     required this.accentPrimary,
     required this.accentSecondary,
     required this.error,
+    required this.success,
+    required this.warning,
+    required this.info,
+    required this.accentTertiary,
   });
 
   /// Instancia predeterminada para el Modo Oscuro (Dark Mode).
@@ -79,7 +95,11 @@ class LiaColors extends ThemeExtension<LiaColors> {
     borderFocus: Color(0xFF52525B),
     accentPrimary: Color(0xFF8B5CF6), // Violeta vibrante
     accentSecondary: Color(0xFF3B82F6), // Azul vibrante
-    error: Color(0xFFEF4444),
+    error: Color(0xFFEF4444),         // Rojo
+    success: Color(0xFF10B981),       // Verde Neón
+    warning: Color(0xFFF59E0B),       // Naranja
+    info: Color(0xFF06B6D4),          // Turquesa
+    accentTertiary: Color(0xFF06B6D4),// Usando turquesa como terciario
   );
 
   @override
@@ -95,6 +115,10 @@ class LiaColors extends ThemeExtension<LiaColors> {
     Color? accentPrimary,
     Color? accentSecondary,
     Color? error,
+    Color? success,
+    Color? warning,
+    Color? info,
+    Color? accentTertiary,
   }) {
     return LiaColors(
       background: background ?? this.background,
@@ -108,6 +132,10 @@ class LiaColors extends ThemeExtension<LiaColors> {
       accentPrimary: accentPrimary ?? this.accentPrimary,
       accentSecondary: accentSecondary ?? this.accentSecondary,
       error: error ?? this.error,
+      success: success ?? this.success,
+      warning: warning ?? this.warning,
+      info: info ?? this.info,
+      accentTertiary: accentTertiary ?? this.accentTertiary,
     );
   }
 
@@ -129,6 +157,10 @@ class LiaColors extends ThemeExtension<LiaColors> {
       accentPrimary: Color.lerp(accentPrimary, other.accentPrimary, t)!,
       accentSecondary: Color.lerp(accentSecondary, other.accentSecondary, t)!,
       error: Color.lerp(error, other.error, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      info: Color.lerp(info, other.info, t)!,
+      accentTertiary: Color.lerp(accentTertiary, other.accentTertiary, t)!,
     );
   }
 }
