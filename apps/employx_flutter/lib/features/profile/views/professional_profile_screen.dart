@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/theme/lia_theme.dart';
-import '../../../core/actions/mission_actions.dart';
 import '../../../core/ui/lia_glass_panel.dart';
+
+import '../providers/profile_hub_provider.dart';
 
 import '../widgets/profile_hero_header.dart';
 import '../widgets/profile_summary_widget.dart';
@@ -22,15 +23,68 @@ class ProfessionalProfileScreen extends StatelessWidget {
     final colors = context.liaColors;
     final spacings = context.liaSpacings;
 
-    final missionActions =
-        context.watch<MissionActions>();
+    final profileHub =
+        context.watch<ProfileHubProvider>();
 
     final profile =
-        missionActions.currentProfile;
+        profileHub.activeProfessionalProfile;
+
+    // ============================================================
+    // LOADING
+    // ============================================================
+
+    if (profileHub.isLoadingProfile) {
+      return Scaffold(
+        backgroundColor: colors.background,
+        body: Center(
+          child: LiaGlassPanel(
+            hasGlow: true,
+            glowColor: colors.accentPrimary,
+            padding: EdgeInsets.all(
+              spacings.xxl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: CircularProgressIndicator(
+                    color: colors.accentPrimary,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+                SizedBox(
+                  height: spacings.lg,
+                ),
+                Text(
+                  'Cargando perfil profesional...',
+                  style:
+                      context.liaTypography.h3.copyWith(
+                    color: colors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ============================================================
+    // EMPTY / ERROR
+    // ============================================================
 
     if (profile == null) {
-      return _buildEmptyState(context);
+      return _buildEmptyState(
+        context,
+        profileHub,
+      );
     }
+
+    // ============================================================
+    // PROFESSIONAL PROFILE
+    // ============================================================
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -120,10 +174,18 @@ class ProfessionalProfileScreen extends StatelessWidget {
 
   Widget _buildEmptyState(
     BuildContext context,
+    ProfileHubProvider profileHub,
   ) {
     final colors = context.liaColors;
-    final typography = context.liaTypography;
-    final spacings = context.liaSpacings;
+    final typography =
+        context.liaTypography;
+    final spacings =
+        context.liaSpacings;
+
+    final hasCvs = profileHub.hasCvs;
+
+    final error =
+        profileHub.profileError;
 
     return Scaffold(
       backgroundColor: colors.background,
@@ -138,7 +200,9 @@ class ProfessionalProfileScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.person_search_outlined,
+                hasCvs
+                    ? Icons.description_outlined
+                    : Icons.person_search_outlined,
                 size: 64,
                 color: colors.accentPrimary,
               ),
@@ -148,10 +212,13 @@ class ProfessionalProfileScreen extends StatelessWidget {
               ),
 
               Text(
-                'Perfil No Encontrado',
+                hasCvs
+                    ? 'Perfil Profesional No Disponible'
+                    : 'Perfil No Encontrado',
                 style: typography.h2.copyWith(
                   color: colors.textPrimary,
                 ),
+                textAlign: TextAlign.center,
               ),
 
               SizedBox(
@@ -159,14 +226,40 @@ class ProfessionalProfileScreen extends StatelessWidget {
               ),
 
               Text(
-                'Aún no hay un perfil procesado.\n'
-                'Ve al Centro de Comando y sube tu CV '
-                'para comenzar.',
+                hasCvs
+                    ? (
+                        error ??
+                        'El CV seleccionado todavía no tiene '
+                        'un perfil profesional disponible.'
+                      )
+                    : (
+                        'Aún no hay un perfil procesado.\n'
+                        'Ve al Centro de Comando y sube tu CV '
+                        'para comenzar.'
+                      ),
                 textAlign: TextAlign.center,
-                style: typography.bodyMedium.copyWith(
+                style:
+                    typography.bodyMedium.copyWith(
                   color: colors.textSecondary,
                 ),
               ),
+
+              if (hasCvs) ...[
+                SizedBox(
+                  height: spacings.lg,
+                ),
+                TextButton.icon(
+                  onPressed:
+                      profileHub
+                          .refreshActiveProfessionalProfile,
+                  icon: const Icon(
+                    Icons.refresh,
+                  ),
+                  label: const Text(
+                    'Reintentar',
+                  ),
+                ),
+              ],
             ],
           ),
         ),

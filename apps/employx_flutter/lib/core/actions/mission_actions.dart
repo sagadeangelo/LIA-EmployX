@@ -11,10 +11,14 @@ import '../repositories/mission_repository.dart';
 import '../repositories/profile_repository.dart';
 import '../utils/app_logger.dart';
 
+import '../../features/profile/models/cv_document.dart';
+import '../../features/profile/providers/profile_hub_provider.dart';
+
 class MissionActions extends ChangeNotifier {
   final MissionRepository _missionRepository;
   final CVRepository _cvRepository;
   final ProfileRepository _profileRepository;
+  final ProfileHubProvider _profileHubProvider;
 
   MissionModel? _currentMission;
   ProfessionalProfile? _currentProfile;
@@ -28,23 +32,35 @@ class MissionActions extends ChangeNotifier {
     this._missionRepository, {
     CVRepository? cvRepository,
     ProfileRepository? profileRepository,
-  })  : _cvRepository =
-            cvRepository ?? CVRepository(),
+    required ProfileHubProvider profileHubProvider,
+  })  : _cvRepository = cvRepository ?? CVRepository(),
         _profileRepository =
-            profileRepository ?? ProfileRepository();
+            profileRepository ?? ProfileRepository(),
+        _profileHubProvider = profileHubProvider;
 
-  MissionModel? get currentMission =>
-      _currentMission;
+  // ============================================================
+  // GETTERS
+  // ============================================================
 
-  ProfessionalProfile? get currentProfile =>
-      _currentProfile;
+  MissionModel? get currentMission => _currentMission;
+
+  ProfessionalProfile? get currentProfile => _currentProfile;
 
   bool get isLoading => _isLoading;
 
   String? get error => _error;
 
-  bool get hasMission =>
-      _currentMission != null;
+  bool get hasMission {
+    if (_currentMission == null) return false;
+    final status = _currentMission!.status;
+    return status != 'COMPLETED' && status != 'FAILED' && status != 'CANCELLED';
+  }
+
+  bool get hasProfile => _currentProfile != null;
+
+  // ============================================================
+  // MISSION STATE
+  // ============================================================
 
   void detachCurrentMission() {
     _currentMission = null;
@@ -68,6 +84,10 @@ class MissionActions extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ============================================================
+  // LOAD ACTIVE MISSION
+  // ============================================================
+
   Future<void> loadActiveMission({
     bool silent = false,
   }) async {
@@ -77,21 +97,28 @@ class MissionActions extends ChangeNotifier {
 
     try {
       final missions =
-          await _missionRepository
-              .getActiveMissions();
+          await _missionRepository.getActiveMissions();
 
-      if (missions.isNotEmpty) {
-        _currentMission =
-            missions.first;
+      // Ensure we only pick truly active missions, ignoring terminal states
+      // even if the backend accidentally returned them.
+      final activeMissions = missions.where((m) => 
+        m.status != 'COMPLETED' && 
+        m.status != 'FAILED' && 
+        m.status != 'CANCELLED'
+      ).toList();
+
+      if (activeMissions.isNotEmpty) {
+        _currentMission = activeMissions.first;
 
         final profileId =
-            _currentMission?.profileId;
+            _currentMission?.profileId?.trim();
 
         if (profileId != null &&
             profileId.isNotEmpty) {
           _currentProfile =
-              await _profileRepository
-                  .getProfile(profileId);
+              await _profileRepository.getProfile(
+            profileId,
+          );
         } else {
           _currentProfile = null;
         }
@@ -118,6 +145,123 @@ class MissionActions extends ChangeNotifier {
     }
   }
 
+  // ============================================================
+  // LOAD PROFILE FOR CV
+  // ============================================================
+
+  /// Carga el ProfessionalProfile asociado directamente
+  /// al CV seleccionado.
+  ///
+  /// Flujo:
+  ///
+  /// CVDocument
+  ///     ↓
+  /// professionalProfileId
+  ///     ↓
+  /// ProfileRepository
+  ///     ↓
+  /// ProfessionalProfile
+  ///     ↓
+  /// _currentProfile
+  Future<void> loadProfileForCv(
+    CVDocument cv,
+  ) async {
+    final profileId =
+        cv.professionalProfileId?.trim();
+
+    if (profileId == null ||
+        profileId.isEmpty) {
+      AppLogger.warning(
+        'Profile',
+        'El CV seleccionado no tiene professionalProfileId.',
+      );
+
+      _currentProfile = null;
+      _error = null;
+
+      notifyListeners();
+      return;
+    }
+
+    _setLoading(true);
+
+    try {
+      AppLogger.info(
+        'Profile',
+        'Cargando perfil profesional asociado al CV [$profileId].',
+      );
+
+      final profile =
+          await _profileRepository.getProfile(
+        profileId,
+      );
+
+      if (profile == null) {
+        AppLogger.warning(
+          'Profile',
+          'No se encontró ProfessionalProfile [$profileId].',
+        );
+      } else {
+        AppLogger.info(
+          'Profile',
+          'ProfessionalProfile [$profileId] cargado correctamente.',
+        );
+      }
+
+      _currentProfile = profile;
+      _error = null;
+
+      notifyListeners();
+    } catch (e) {
+      _currentProfile = null;
+      _error = e.toString();
+
+      AppLogger.error(
+        'Profile',
+        'Error cargando perfil profesional del CV.',
+        error: e,
+      );
+
+      notifyListeners();
+
+      rethrow;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // ============================================================
+  // LOAD ACTIVE CV PROFILE
+  // ============================================================
+
+  /// Sincroniza ProfessionalProfile con el CV actualmente
+  /// seleccionado en ProfileHub.
+  Future<void> loadActiveCvProfile() async {
+    final activeCv =
+        _profileHubProvider.activeCv;
+
+    if (activeCv == null) {
+      AppLogger.info(
+        'Profile',
+        'No existe un CV activo en ProfileHub.',
+      );
+
+      _currentProfile = null;
+      _error = null;
+
+      notifyListeners();
+      return;
+    }
+
+    await loadProfileForCv(
+      activeCv,
+    );
+  }
+
+  // ============================================================
+  // CREATE MISSION
+  // ============================================================
+
   Future<void> createMission(
     Map<String, dynamic> data,
   ) async {
@@ -130,8 +274,9 @@ class MissionActions extends ChangeNotifier {
       );
 
       _currentMission =
-          await _missionRepository
-              .createMission(data);
+          await _missionRepository.createMission(
+        data,
+      );
 
       _error = null;
 
@@ -147,18 +292,40 @@ class MissionActions extends ChangeNotifier {
     }
   }
 
+  // ============================================================
+  // PING
+  // ============================================================
+
   Future<bool> pingServer() async {
     final client = ApiClient();
 
     return client.ping();
   }
 
-  Future<UploadMissionResponse> uploadCV(
-    String filePath,
-    String fileName, {
+  // ============================================================
+  // UPLOAD CV
+  // ============================================================
+
+  /// Sube y procesa un CV.
+  ///
+  /// El backend devuelve:
+  ///
+  /// - MissionSnapshot
+  /// - CVDocument
+  ///
+  /// El CVDocument contiene el professionalProfileId
+  /// generado por el backend.
+  ///
+  /// Ese ID se utiliza para:
+  ///
+  /// 1. Registrar correctamente el CV en ProfileHub.
+  /// 2. Cargar el ProfessionalProfile correspondiente.
+  Future<UploadMissionResponse> uploadCV({
+    String? filePath,
+    List<int>? fileBytes,
+    required String fileName,
     String? missionId,
-    void Function(int sent, int total)?
-        onSendProgress,
+    void Function(int sent, int total)? onSendProgress,
   }) async {
     _setLoading(true);
 
@@ -173,8 +340,9 @@ class MissionActions extends ChangeNotifier {
 
       final response =
           await _cvRepository.uploadCV(
-        filePath,
-        fileName,
+        filePath: filePath,
+        fileBytes: fileBytes,
+        fileName: fileName,
         missionId: missionId,
         onSendProgress: onSendProgress,
       );
@@ -189,8 +357,87 @@ class MissionActions extends ChangeNotifier {
 
       _currentMission = mission;
 
-      // response.cv YA ES ProfessionalProfile.
-      _currentProfile = response.cv;
+      // ==========================================================
+      // CV DOCUMENT DEVUELTO POR BACKEND
+      // ==========================================================
+
+      final cvDocument = response.cv;
+
+      if (cvDocument == null) {
+        throw StateError(
+          'El backend procesó el CV pero no devolvió '
+          'el CVDocument en UploadMissionResponse.',
+        );
+      }
+
+      // NO DEPENDER de cvDocument.professionalProfileId
+      // UploadMissionResponse.profile es la fuente de verdad.
+      final profileId = response.profile?.id.trim();
+
+      AppLogger.info(
+        'Mission',
+        'CVDocument recibido correctamente.',
+        missionId: mission.id,
+      );
+
+      AppLogger.info(
+        'Profile',
+        'ProfessionalProfile asociado al CV: '
+        '${profileId ?? 'NULL'}',
+        missionId: mission.id,
+      );
+
+      // ==========================================================
+      // REGISTRAR CV EN PROFILE HUB
+      // ==========================================================
+
+      await _profileHubProvider.registerProcessedCv(
+        id: cvDocument.id.isNotEmpty
+            ? cvDocument.id
+            : _buildCvDocumentId(
+                mission,
+                fileName,
+              ),
+        fileName: cvDocument.fileName.isNotEmpty
+            ? cvDocument.fileName
+            : fileName,
+        localPath: filePath,
+        remotePath: cvDocument.remotePath,
+        professionalProfileId: profileId,
+        displayName: cvDocument.displayName,
+      );
+
+      // ==========================================================
+      // CARGAR PROFESSIONAL PROFILE
+      // ==========================================================
+
+      if (profileId != null && profileId.isNotEmpty) {
+        // En lugar de pasar cvDocument, pasamos un CVDocument temporal 
+        // o llamamos a cargar por id.
+        // Pero loadProfileForCv espera un CVDocument que TENGA el profileId.
+        // Como acabamos de registrarlo en ProfileHubProvider, el CV activo
+        // o registrado ahora lo tiene. 
+        // Mejor recrear un documento con el ID, o simplemente esperar a que 
+        // ProfileHubProvider lo cargue por sí mismo.
+        
+        // Wait, ProfileHubProvider.registerProcessedCv YA se encarga de cargar
+        // el ProfessionalProfile activo!
+        // Y MissionActions sincroniza con _profileHubProvider si es necesario.
+        // De hecho, loadActiveCvProfile() hace eso.
+        await loadProfileForCv(
+          cvDocument.copyWith(professionalProfileId: profileId),
+        );
+      } else {
+        AppLogger.warning(
+          'Profile',
+          'El CV recibido no contiene '
+          'professionalProfileId en la respuesta (profile.id). '
+          'No se puede cargar el perfil profesional.',
+          missionId: mission.id,
+        );
+
+        _currentProfile = null;
+      }
 
       _error = null;
 
@@ -198,7 +445,8 @@ class MissionActions extends ChangeNotifier {
 
       AppLogger.info(
         'Mission',
-        'CV recibido y perfil profesional cargado.',
+        'CV recibido, CV registrado y perfil profesional '
+        'asociado correctamente.',
         missionId: mission.id,
         durationMs: durationMs,
       );
@@ -228,6 +476,35 @@ class MissionActions extends ChangeNotifier {
     }
   }
 
+  // ============================================================
+  // CV DOCUMENT ID
+  // ============================================================
+
+  String _buildCvDocumentId(
+    MissionModel mission,
+    String fileName,
+  ) {
+    final missionId =
+        mission.id.trim();
+
+    final normalizedFileName =
+        fileName.trim();
+
+    if (missionId.isNotEmpty) {
+      return 'cv-$missionId';
+    }
+
+    if (normalizedFileName.isNotEmpty) {
+      return 'cv-$normalizedFileName';
+    }
+
+    return 'cv-${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  // ============================================================
+  // RESUME / RESTART
+  // ============================================================
+
   Future<void> resumeMission() async {
     final mission = _currentMission;
 
@@ -235,8 +512,9 @@ class MissionActions extends ChangeNotifier {
       return;
     }
 
-    await _missionRepository
-        .resumeMission(mission.id);
+    await _missionRepository.resumeMission(
+      mission.id,
+    );
   }
 
   Future<void> restartMission() async {
@@ -246,9 +524,14 @@ class MissionActions extends ChangeNotifier {
       return;
     }
 
-    await _missionRepository
-        .restartMission(mission.id);
+    await _missionRepository.restartMission(
+      mission.id,
+    );
   }
+
+  // ============================================================
+  // POLLING
+  // ============================================================
 
   void startPolling() {
     _pollTimer?.cancel();
@@ -267,6 +550,10 @@ class MissionActions extends ChangeNotifier {
     _pollTimer?.cancel();
     _pollTimer = null;
   }
+
+  // ============================================================
+  // DISPOSE
+  // ============================================================
 
   @override
   void dispose() {

@@ -8,11 +8,11 @@ class MainLayout extends StatefulWidget {
   final Function(int) onItemSelected;
 
   const MainLayout({
-    Key? key,
-    required this.child,
-    required this.selectedIndex,
-    required this.onItemSelected,
-  }) : super(key: key);
+     super.key,
+     required this.child,
+     required this.selectedIndex,
+     required this.onItemSelected,
+   });
 
   @override
   State<MainLayout> createState() => _MainLayoutState();

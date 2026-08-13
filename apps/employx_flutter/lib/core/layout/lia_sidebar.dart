@@ -9,12 +9,12 @@ class LiaSidebar extends StatelessWidget {
   final Function(int) onItemSelected;
 
   const LiaSidebar({
-    Key? key,
+    super.key,
     required this.isCollapsed,
     required this.onToggle,
     required this.selectedIndex,
     required this.onItemSelected,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +110,9 @@ class LiaSidebar extends StatelessWidget {
                 horizontal: isCollapsed ? 8 : spacings.sm,
               ),
               children: [
+                // ========================================================
+                // 0 — CENTRO DE COMANDO
+                // ========================================================
                 _SidebarItem(
                   icon: Icons.home_outlined,
                   label: 'Centro de Comando',
@@ -117,6 +120,10 @@ class LiaSidebar extends StatelessWidget {
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(0),
                 ),
+
+                // ========================================================
+                // 1 — PERFIL PROFESIONAL
+                // ========================================================
                 _SidebarItem(
                   icon: Icons.person_outline,
                   label: 'Perfil Profesional',
@@ -124,54 +131,93 @@ class LiaSidebar extends StatelessWidget {
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(1),
                 ),
+
+                // ========================================================
+                // 2 — MIS CVs
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.flag_outlined,
-                  label: 'Objetivo Profesional',
+                  icon: Icons.description_outlined,
+                  label: 'Mis CVs',
                   isSelected: selectedIndex == 2,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(2),
                 ),
+
+                // ========================================================
+                // 3 — OBJETIVO PROFESIONAL
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.timeline,
-                  label: 'Mission Timeline',
+                  icon: Icons.flag_outlined,
+                  label: 'Objetivo Profesional',
                   isSelected: selectedIndex == 3,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(3),
                 ),
+
+                // ========================================================
+                // 4 — MISSION TIMELINE
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.rocket_launch,
-                  label: 'Mission Center',
+                  icon: Icons.timeline,
+                  label: 'Mission Timeline',
                   isSelected: selectedIndex == 4,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(4),
                 ),
+
+                // ========================================================
+                // 5 — MISSION CENTER
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.storefront,
-                  label: 'Agent Hub',
+                  icon: Icons.rocket_launch,
+                  label: 'Mission Center',
                   isSelected: selectedIndex == 5,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(5),
                 ),
+
+                // ========================================================
+                // 6 — AGENT HUB
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.library_books,
-                  label: 'Knowledge Base',
+                  icon: Icons.storefront,
+                  label: 'Agent Hub',
                   isSelected: selectedIndex == 6,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(6),
                 ),
+
+                // ========================================================
+                // 7 — KNOWLEDGE BASE
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.work_outline,
-                  label: 'Vacantes',
+                  icon: Icons.library_books,
+                  label: 'Knowledge Base',
                   isSelected: selectedIndex == 7,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(7),
                 ),
+
+                // ========================================================
+                // 8 — VACANTES / JOB HUNTER
+                // ========================================================
                 _SidebarItem(
-                  icon: Icons.dashboard_outlined,
-                  label: 'Dashboard',
+                  icon: Icons.work_outline,
+                  label: 'Vacantes',
                   isSelected: selectedIndex == 8,
                   isCollapsed: isCollapsed,
                   onTap: () => onItemSelected(8),
+                ),
+
+                // ========================================================
+                // 9 — DASHBOARD
+                // ========================================================
+                _SidebarItem(
+                  icon: Icons.dashboard_outlined,
+                  label: 'Dashboard',
+                  isSelected: selectedIndex == 9,
+                  isCollapsed: isCollapsed,
+                  onTap: () => onItemSelected(9),
                 ),
               ],
             ),

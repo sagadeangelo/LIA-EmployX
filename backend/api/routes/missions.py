@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import List
+from typing import List, Optional
 
 from backend.modules.mission.models import (
     Mission,
@@ -53,8 +53,18 @@ async def create_mission(mission_data: MissionCreate):
 
 
 @router.get("", response_model=List[Mission])
-async def list_missions():
-    return mission_repo.get_all()
+async def list_missions(status: Optional[str] = None):
+    missions = mission_repo.get_all()
+    if status == "active":
+        active_missions = [
+            m for m in missions 
+            if m.status not in (MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.CANCELLED)
+        ]
+        active_missions.sort(key=lambda x: x.created_at, reverse=True)
+        return active_missions
+    
+    missions.sort(key=lambda x: x.created_at, reverse=True)
+    return missions
 
 
 @router.get("/{mission_id}/snapshot", response_model=MissionSnapshot)

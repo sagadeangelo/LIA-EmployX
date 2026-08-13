@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 
+import '../../../core/config/env_config.dart';
 import '../models/vacancy_model.dart';
 
 /// Cliente de acceso a FreeHire.
@@ -14,7 +15,14 @@ import '../models/vacancy_model.dart';
 /// La aplicación no debe depender directamente del formato
 /// interno de FreeHire después de esta capa.
 class FreeHireProvider {
-  static const String _baseUrl = 'https://freehire.me';
+  /// Base URL del proxy en el backend de LIA.
+  ///
+  /// Flutter Web no puede llamar directamente a https://freehire.me porque
+  /// FreeHire no devuelve Access-Control-Allow-Origin en sus respuestas CORS.
+  /// El backend de LIA actúa como proxy transparente: recibe la petición
+  /// desde Flutter y la reenvía a FreeHire server-side, evitando el bloqueo
+  /// del browser.
+  static String get _baseUrl => EnvConfig.baseUrl;
 
   final Dio _dio;
 
@@ -34,20 +42,30 @@ class FreeHireProvider {
 
   /// Busca vacantes en FreeHire.
   ///
-  /// [query] permite buscar por título, empresa, skill, etc.
+  /// [query] debe contener únicamente contexto profesional:
+  /// cargo, skills relevantes. NO debe contener ubicación.
   ///
-  /// [limit] controla la cantidad máxima de resultados.
+  /// [countries] acepta uno o varios códigos ISO 3166-1 alpha-2
+  /// separados por coma (ej. "mx", "mx,us"). Este es el único
+  /// mecanismo de filtrado geográfico real que soporta FreeHire
+  /// en /jobs/search. Parámetros como location, city, region o
+  /// country son ignorados por la API.
   ///
-  /// [offset] permite paginar resultados.
+  /// [limit] y [offset] controlan la paginación.
   Future<List<VacancyModel>> searchJobs({
     String query = '',
+    String countries = '',
     int limit = 20,
     int offset = 0,
   }) async {
+    final trimmedQuery = query.trim();
+    final trimmedCountries = countries.trim();
+
     final response = await _dio.get(
-      '/api/v1/jobs/search',
+      '/jobs/search',
       queryParameters: {
-        if (query.trim().isNotEmpty) 'q': query.trim(),
+        if (trimmedQuery.isNotEmpty) 'q': trimmedQuery,
+        if (trimmedCountries.isNotEmpty) 'countries': trimmedCountries,
         'limit': limit,
         'offset': offset,
       },
@@ -64,7 +82,7 @@ class FreeHireProvider {
     int offset = 0,
   }) async {
     final response = await _dio.get(
-      '/api/v1/jobs',
+      '/jobs',
       queryParameters: {
         'limit': limit,
         'offset': offset,

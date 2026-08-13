@@ -17,7 +17,7 @@ class MissionRepository {
   }
 
   Future<List<MissionModel>> getActiveMissions() async {
-    final response = await _apiClient.get('/missions');
+    final response = await _apiClient.get('/missions', queryParameters: {'status': 'active'});
     final List<dynamic> data = response.data;
     return data.map((json) => MissionModel.fromJson(json)).toList();
   }

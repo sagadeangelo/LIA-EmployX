@@ -24,14 +24,23 @@ class VacancyRepository {
     );
   }
 
-  /// Realiza una búsqueda manual.
+  /// Realiza una búsqueda de vacantes con contexto profesional y
+  /// filtro geográfico estructurado.
+  ///
+  /// [query] debe contener solo contexto profesional (cargo, skills).
+  ///
+  /// [countries] recibe códigos ISO 3166-1 alpha-2 separados por
+  /// coma (ej. "mx", "mx,us"). Corresponde al parámetro real
+  /// que soporta FreeHire en /jobs/search.
   Future<List<VacancyModel>> searchJobs({
     String query = '',
+    String countries = '',
     int limit = 20,
     int offset = 0,
   }) {
     return _freeHireProvider.searchJobs(
       query: query,
+      countries: countries,
       limit: limit,
       offset: offset,
     );

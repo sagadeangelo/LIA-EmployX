@@ -1,8 +1,13 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/vacancy_model.dart';
 import '../providers/vacancy_provider.dart';
+import '../services/location_resolver.dart';
+import '../services/device_location_service.dart';
+
+import '../../profile/providers/profile_hub_provider.dart';
+import '../../../core/models/professional_profile_model.dart';
 
 class VacanciesScreen extends StatefulWidget {
   const VacanciesScreen({super.key});
@@ -19,33 +24,36 @@ class _VacanciesScreenState extends State<VacanciesScreen> {
   String _selectedLevel = 'Todos';
   String _selectedMatch = 'Todos';
   String? _selectedJobId;
+  
+  bool _isDetectingLocation = false;
 
   final Set<String> _savedJobs = <String>{};
 
 List<_Job> _mapVacanciesToJobs(
   List<VacancyModel> vacancies,
+  ProfessionalProfile? profile,
 ) {
   return vacancies.map((vacancy) {
     return _Job(
       id: vacancy.id,
       title: vacancy.title.isEmpty
-          ? 'Vacante sin título'
+          ? 'Posición Confidencial'
           : vacancy.title,
       company: vacancy.company.isEmpty
-          ? 'Empresa no especificada'
+          ? 'Empresa No Especificada'
           : vacancy.company,
       location: vacancy.location.isEmpty
-          ? 'Ubicación no especificada'
+          ? 'Ubicación remota'
           : vacancy.location,
       mode: _displayModality(vacancy.modality),
       level: vacancy.experienceLevel.isEmpty
           ? 'No especificado'
           : vacancy.experienceLevel,
       salary: _formatSalary(vacancy),
-      match: _calculateInitialMatch(vacancy),
+      match: _calculateInitialMatch(vacancy, profile),
       posted: _formatPostedDate(vacancy.postedAt),
       source: vacancy.source.isEmpty
-          ? 'FreeHire'
+          ? 'LIA EmployX'
           : vacancy.source,
       skills: vacancy.skills,
       description: vacancy.description,
@@ -53,19 +61,14 @@ List<_Job> _mapVacanciesToJobs(
   }).toList();
 }
 
-String _displayModality(String value) {
-  switch (value.toLowerCase()) {
-    case 'remote':
-      return 'Remoto';
-    case 'hybrid':
-      return 'Híbrido';
-    case 'on-site':
-    case 'onsite':
-    case 'on site':
-      return 'Presencial';
-    default:
-      return value.isEmpty ? 'No especificado' : value;
+String _displayModality(String modality) {
+  final mod = modality.toLowerCase();
+  if (mod.contains('remote')) return 'Remoto';
+  if (mod.contains('hybrid')) return 'Híbrido';
+  if (mod.contains('on-site') || mod.contains('onsite')) {
+    return 'Presencial';
   }
+  return modality.isEmpty ? 'Híbrido' : modality;
 }
 
 String _formatSalary(VacancyModel vacancy) {
@@ -73,51 +76,61 @@ String _formatSalary(VacancyModel vacancy) {
   final max = vacancy.salaryMax;
 
   if (min == null && max == null) {
-    return 'Salario no especificado';
+    return 'Salario a convenir';
   }
 
   final currency = vacancy.currency ?? 'MXN';
 
   if (min != null && max != null) {
-    return '${_formatNumber(min)} - ${_formatNumber(max)} $currency';
+    return '\$${_k(min)} - \$${_k(max)} $currency/año';
   }
 
   if (min != null) {
-    return 'Desde ${_formatNumber(min)} $currency';
+    return 'Desde \$${_k(min)} $currency/año';
   }
 
-  return 'Hasta ${_formatNumber(max!)} $currency';
+  return 'Hasta \$${_k(max!)} $currency/año';
 }
 
-String _formatNumber(double value) {
-  return value
-      .toStringAsFixed(0)
-      .replaceAllMapped(
-        RegExp(r'\B(?=(\d{3})+(?!\d))'),
-        (match) => ',',
-      );
+String _k(num value) {
+  if (value >= 1000) {
+    return '${(value / 1000).toStringAsFixed(0)}k';
+  }
+  return value.toString();
 }
 
-int _calculateInitialMatch(VacancyModel vacancy) {
-  final skillCount = vacancy.skills.length;
-
-  if (skillCount >= 8) {
-    return 90;
+int _calculateInitialMatch(VacancyModel vacancy, ProfessionalProfile? profile) {
+  if (profile == null || profile.skills.items.isEmpty) {
+    final skillCount = vacancy.skills.length;
+    if (skillCount >= 8) return 90;
+    if (skillCount >= 5) return 85;
+    if (skillCount >= 3) return 80;
+    if (skillCount >= 1) return 75;
+    return 70;
   }
 
-  if (skillCount >= 5) {
-    return 85;
+  final vacancySkills = vacancy.skills.map((s) => s.toLowerCase()).toSet();
+  if (vacancySkills.isEmpty) return 70;
+
+  final profileSkills = profile.skills.items.map((s) => s.name.toLowerCase()).toSet();
+  
+  int matchCount = 0;
+  for (final vs in vacancySkills) {
+    if (profileSkills.contains(vs)) {
+      matchCount++;
+    } else {
+       for (final ps in profileSkills) {
+         if (ps.contains(vs) || vs.contains(ps)) {
+           matchCount++;
+           break;
+         }
+       }
+    }
   }
 
-  if (skillCount >= 3) {
-    return 80;
-  }
-
-  if (skillCount >= 1) {
-    return 75;
-  }
-
-  return 70;
+  final ratio = matchCount / vacancySkills.length;
+  final score = 50 + (ratio * 50).toInt();
+  return score.clamp(0, 100);
 }
 
 String _formatPostedDate(DateTime? date) {
@@ -147,14 +160,59 @@ String _formatPostedDate(DateTime? date) {
 
   return 'Hace $months meses';
 }
+  String? _lastProfileId;
+
   @override
   void initState() {
     super.initState();
+    // Ya no cargamos aquí porque didChangeDependencies se encargará al iniciar
+  }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.read<VacancyProvider>().loadInitialVacancies();
-    });
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final profile = context.watch<ProfileHubProvider>().activeProfessionalProfile;
+    final currentProfileId = profile?.id;
+
+    if (_lastProfileId != currentProfileId) {
+      _lastProfileId = currentProfileId;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _triggerProfileSearch(profile);
+      });
+    }
+  }
+
+  /// Construye el query profesional y resuelve la ubicación, luego
+  /// dispara una búsqueda en VacancyProvider con los parámetros correctos.
+  void _triggerProfileSearch(ProfessionalProfile? profile) {
+    final provider = context.read<VacancyProvider>();
+
+    if (profile == null) {
+      provider.loadInitialVacancies();
+      return;
+    }
+
+    // ── Query profesional (cargo + top skills, SIN ubicación) ──
+    final role = profile.personalInfo.currentPosition.trim();
+    final topSkills = profile.skills.items
+        .take(5)
+        .map((s) => s.name)
+        .join(' ');
+    final query = role.isNotEmpty ? '$role $topSkills'.trim() : topSkills;
+
+    // ── Resolución de ubicación → código ISO ──────────────────
+    final locationText = _locationController.text.trim();
+    final resolved = LocationResolver.resolve(locationText);
+
+    provider.search(
+      query: query,
+      countries: resolved?.countryCode ?? '',
+      city: resolved?.city,
+      region: resolved?.region,
+    );
   }
 
   @override
@@ -164,14 +222,46 @@ String _formatPostedDate(DateTime? date) {
     super.dispose();
   }
 
+  // ── Ranking geográfico ───────────────────────────────────────
+
+  /// Ordena los trabajos aplicando prioridad geográfica:
+  ///   1. Ciudad exacta  2. Estado/Región  3. País  4. Remoto  5. Internacional
+  List<_Job> _applyGeoRanking(List<_Job> jobs) {
+    final provider = context.read<VacancyProvider>();
+    final city = (provider.city ?? '').toLowerCase();
+    final region = (provider.region ?? '').toLowerCase();
+
+    if (city.isEmpty && region.isEmpty) return jobs;
+
+    int geoScore(_Job job) {
+      final loc = job.location.toLowerCase();
+      if (city.isNotEmpty && loc.contains(city)) return 5;
+      if (region.isNotEmpty && loc.contains(region)) return 4;
+      if (job.mode.toLowerCase().contains('remoto') ||
+          job.mode.toLowerCase().contains('remote')) {
+        return 3;
+      }
+      if (job.location.isNotEmpty) return 2;
+      return 1;
+    }
+
+    final sorted = [...jobs]..sort((a, b) {
+      final geo = geoScore(b).compareTo(geoScore(a));
+      if (geo != 0) return geo;
+      return b.match.compareTo(a.match);
+    });
+    return sorted;
+  }
+
   List<_Job> get _filteredJobs {
     final provider = context.read<VacancyProvider>();
-    final liveJobs = _mapVacanciesToJobs(provider.vacancies);
+    final profile = context.read<ProfileHubProvider>().activeProfessionalProfile;
+    final liveJobs = _mapVacanciesToJobs(provider.vacancies, profile);
 
     final query = _searchController.text.trim().toLowerCase();
-    final location = _locationController.text.trim().toLowerCase();
+    final locationText = _locationController.text.trim().toLowerCase();
 
-    return liveJobs.where((job) {
+    final filtered = liveJobs.where((job) {
       final matchesQuery = query.isEmpty ||
           job.title.toLowerCase().contains(query) ||
           job.company.toLowerCase().contains(query) ||
@@ -179,8 +269,14 @@ String _formatPostedDate(DateTime? date) {
             (skill) => skill.toLowerCase().contains(query),
           );
 
-      final matchesLocation =
-          location.isEmpty || job.location.toLowerCase().contains(location);
+      // Filtro local secundario: si la API ya filtró por país,
+      // este filtra además por ciudad/región cuando el usuario
+      // escribe una ubicación y la API no encontró coincidencias
+      // estructuradas.
+      final matchesLocation = locationText.isEmpty ||
+          job.location.toLowerCase().contains(locationText) ||
+          job.mode.toLowerCase().contains('remoto') ||
+          job.mode.toLowerCase().contains('remote');
 
       final matchesMode =
           _selectedMode == 'Todas' || job.mode == _selectedMode;
@@ -201,18 +297,18 @@ String _formatPostedDate(DateTime? date) {
           matchesLevel &&
           matchesScore;
     }).toList();
+
+    return _applyGeoRanking(filtered);
   }
 
   _Job? get _selectedJob {
     if (_selectedJobId == null) return null;
-
     final provider = context.read<VacancyProvider>();
-    final liveJobs = _mapVacanciesToJobs(provider.vacancies);
-
+    final profile = context.read<ProfileHubProvider>().activeProfessionalProfile;
+    final liveJobs = _mapVacanciesToJobs(provider.vacancies, profile);
     for (final job in liveJobs) {
       if (job.id == _selectedJobId) return job;
     }
-
     return null;
   }
 
@@ -242,18 +338,26 @@ String _formatPostedDate(DateTime? date) {
       _selectedJobId = null;
     });
 
-    await context.read<VacancyProvider>().loadInitialVacancies();
+    final profile = context.read<ProfileHubProvider>().activeProfessionalProfile;
+    _triggerProfileSearch(profile);
   }
 
   Future<void> _performSearch() async {
     FocusScope.of(context).unfocus();
 
+    // El campo de búsqueda manual anula el contexto de perfil,
+    // pero la ubicación sigue resolviéndose como código ISO.
+    final locationText = _locationController.text.trim();
+    final resolved = LocationResolver.resolve(locationText);
+
     await context.read<VacancyProvider>().search(
-          query: _searchController.text,
+          query: _searchController.text.trim(),
+          countries: resolved?.countryCode ?? '',
+          city: resolved?.city,
+          region: resolved?.region,
         );
 
     if (!mounted) return;
-
     setState(() {
       _selectedJobId = null;
     });
@@ -432,6 +536,32 @@ String _formatPostedDate(DateTime? date) {
     );
   }
 
+  Future<void> _detectLocation() async {
+    setState(() {
+      _isDetectingLocation = true;
+    });
+
+    final result = await DeviceLocationService.detectLocation();
+
+    if (!mounted) return;
+
+    if (result is LocationSuccess) {
+      _locationController.text = result.location.displayName;
+      await _performSearch();
+    } else if (result is LocationError) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result.message),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    setState(() {
+      _isDetectingLocation = false;
+    });
+  }
+
   Widget _buildSearchPanel(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
@@ -472,6 +602,21 @@ String _formatPostedDate(DateTime? date) {
                   icon: Icons.location_on_outlined,
                   hint: 'Ubicación...',
                   onChanged: (_) => setState(() {}),
+                  suffixIcon: _isDetectingLocation 
+                      ? const Padding(
+                          padding: EdgeInsets.all(14.0),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.my_location, size: 20),
+                          onPressed: _detectLocation,
+                          tooltip: 'Usar mi ubicación',
+                          color: colors.primary,
+                        ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1059,12 +1204,14 @@ class _SearchField extends StatelessWidget {
   final IconData icon;
   final String hint;
   final ValueChanged<String>? onChanged;
+  final Widget? suffixIcon;
 
   const _SearchField({
     required this.controller,
     required this.icon,
     required this.hint,
     this.onChanged,
+    this.suffixIcon,
   });
 
   @override
@@ -1081,6 +1228,7 @@ class _SearchField extends StatelessWidget {
           size: 20,
           color: colors.primary,
         ),
+        suffixIcon: suffixIcon,
         hintText: hint,
         hintStyle: TextStyle(
           color: colors.onSurface.withValues(alpha: 0.4),

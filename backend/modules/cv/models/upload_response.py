@@ -1,19 +1,34 @@
-﻿from pydantic import BaseModel
+﻿from __future__ import annotations
+
+from pydantic import BaseModel
 
 from backend.modules.mission.models import MissionSnapshot
 from backend.modules.cv.models.cv_document import CVDocument
+from backend.modules.profile.models.professional_profile import (
+    ProfessionalProfile,
+)
 
 
 class UploadMissionResponse(BaseModel):
     """
-    Respuesta del endpoint de subida de CV.
+    Respuesta del endpoint:
 
-    snapshot:
-        Estado de la Mission y del Runtime.
+        POST /api/v1/cv/upload
 
-    cv:
-        CVDocument estructurado generado por el pipeline.
+    Contiene:
+
+        snapshot
+            Estado de la Mission.
+
+        cv
+            CVDocument estructurado generado por el pipeline.
+
+        profile
+            ProfessionalProfile generado a partir del CV.
     """
 
     snapshot: MissionSnapshot
+
     cv: CVDocument | None = None
+
+    profile: ProfessionalProfile | None = None

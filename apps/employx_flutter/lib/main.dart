@@ -10,6 +10,9 @@ import 'core/actions/system_actions.dart';
 
 import 'features/dashboard/views/command_center_screen.dart';
 import 'features/profile/views/professional_profile_screen.dart';
+import 'features/profile/providers/profile_hub_provider.dart';
+import 'features/cvs/views/my_cvs_screen.dart';
+
 import 'features/vacancies/views/vacancies_screen.dart';
 import 'features/vacancies/providers/vacancy_provider.dart';
 
@@ -25,26 +28,61 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(
+        // ============================================================
+        // CORE — MISSION
+        // ============================================================
+        ChangeNotifierProvider<MissionProvider>(
           create: (_) => sl<MissionProvider>(),
         ),
-        ChangeNotifierProvider(
+
+        // ============================================================
+        // CORE — UPLOAD
+        // ============================================================
+        ChangeNotifierProvider<UploadProvider>(
           create: (_) => sl<UploadProvider>(),
         ),
-        ChangeNotifierProvider(
+
+        // ============================================================
+        // CORE — ACTIONS
+        // ============================================================
+        ChangeNotifierProvider<MissionActions>(
           create: (_) => sl<MissionActions>(),
         ),
-        ChangeNotifierProvider(
+
+        ChangeNotifierProvider<CommandActions>(
           create: (_) => sl<CommandActions>(),
         ),
-        ChangeNotifierProvider(
+
+        ChangeNotifierProvider<SystemActions>(
           create: (_) => sl<SystemActions>(),
+        ),
+
+        // ============================================================
+        // PROFILE HUB
+        //
+        // IMPORTANTE:
+        //
+        // ProfileHubProvider es un singleton administrado por GetIt.
+        //
+        // MissionActions utiliza exactamente esta misma instancia
+        // para registrar los CV procesados.
+        //
+        // MyCvsScreen también observa esta misma instancia.
+        //
+        // NO crear aquí:
+        //
+        //   ProfileHubProvider()
+        //
+        // porque produciría una segunda instancia independiente.
+        // ============================================================
+        ChangeNotifierProvider<ProfileHubProvider>.value(
+          value: sl<ProfileHubProvider>(),
         ),
 
         // ============================================================
         // JOB HUNTER
         // ============================================================
-        ChangeNotifierProvider(
+        ChangeNotifierProvider<VacancyProvider>(
           create: (_) => VacancyProvider(),
         ),
       ],
@@ -89,47 +127,52 @@ class _AppRootState extends State<_AppRoot> {
     ProfessionalProfileScreen(),
 
     // ================================================================
-    // 2 — OBJETIVO PROFESIONAL
+    // 2 — MIS CVs
+    // ================================================================
+    MyCvsScreen(),
+
+    // ================================================================
+    // 3 — OBJETIVO PROFESIONAL
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Objetivo Profesional',
     ),
 
     // ================================================================
-    // 3 — MISSION TIMELINE
+    // 4 — MISSION TIMELINE
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Mission Timeline',
     ),
 
     // ================================================================
-    // 4 — MISSION CENTER
+    // 5 — MISSION CENTER
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Mission Center',
     ),
 
     // ================================================================
-    // 5 — AGENT HUB
+    // 6 — AGENT HUB
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Agent Hub',
     ),
 
     // ================================================================
-    // 6 — KNOWLEDGE BASE
+    // 7 — KNOWLEDGE BASE
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Knowledge Base',
     ),
 
     // ================================================================
-    // 7 — VACANTES / JOB HUNTER
+    // 8 — VACANTES / JOB HUNTER
     // ================================================================
     VacanciesScreen(),
 
     // ================================================================
-    // 8 — DASHBOARD
+    // 9 — DASHBOARD
     // ================================================================
     FeatureInProgressWidget(
       featureName: 'Dashboard',

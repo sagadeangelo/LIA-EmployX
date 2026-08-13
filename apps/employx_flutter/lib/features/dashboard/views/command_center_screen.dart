@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -54,6 +55,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'docx'],
+      withData: kIsWeb,
     );
 
     final pickerDuration = DateTime.now().difference(startTime).inMilliseconds;
@@ -66,6 +68,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
     final file = result.files.single;
     final filePath = file.path;
+    final fileBytes = file.bytes;
     final fileName = file.name;
     final fileSize = file.size;
 
@@ -75,7 +78,17 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       durationMs: pickerDuration,
     );
 
-    if (filePath == null) {
+    if (kIsWeb && (fileBytes == null || fileBytes.isEmpty)) {
+      AppLogger.error('Flutter', 'FilePicker devolvió un archivo pero no se pudieron leer los bytes (Web).');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Error: No se pudieron leer los datos del archivo.')),
+        );
+      }
+      return;
+    }
+
+    if (!kIsWeb && (filePath == null || filePath.isEmpty)) {
       AppLogger.error('Flutter',
           'FilePicker devolvió un archivo pero la ruta es null (¿plataforma web?).');
       if (mounted) {
@@ -99,7 +112,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
     if (!confirmed || !mounted) return;
 
-    await _startUploadFlow(filePath, fileName);
+    await _startUploadFlow(filePath, fileBytes, file.name);
   }
 
   /// Lightweight confirmation bottom sheet shown before the upload starts.
@@ -288,30 +301,25 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
   // Core upload flow — called after confirmation
   // ---------------------------------------------------------------------------
 
-  Future<void> _startUploadFlow(String filePath, String fileName) async {
+  Future<void> _startUploadFlow(String? filePath, List<int>? fileBytes, String fileName) async {
     if (!mounted) return;
 
     final missionActions = context.read<MissionActions>();
     final uploadProvider = context.read<UploadProvider>();
     final missionProvider = context.read<MissionProvider>();
 
-    AppLogger.info('UploadFlow', 'Realizando ping al servidor...');
-    final isAlive = await missionActions.pingServer();
-
-    if (!isAlive && mounted) {
-      AppLogger.error('UploadFlow', 'Ping falló. El servidor no está disponible.');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('No fue posible conectar con el servidor.')),
-      );
-      return;
-    }
-
     if (!mounted) return;
 
-    uploadProvider.startUpload(filePath);
+    // El feedback visual debe comenzar inmediatamente después de seleccionar
+    // el archivo. No hacemos un ping previo: el propio POST del CV es la
+    // comprobación real de conectividad y evitamos una espera innecesaria.
+    uploadProvider.startUpload(fileName);
 
-    AppLogger.info('UploadFlow', '2. Overlay mostrado');
+    AppLogger.info(
+      'UploadFlow',
+      '2. Overlay mostrado inmediatamente. Archivo: $fileName',
+    );
+
     CVUploadOverlay.show(
       context,
       onRetry: _handleRetry,
@@ -320,23 +328,32 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
 
     try {
-      AppLogger.info('UploadFlow', '3. POST iniciado');
-      final response = await context.read<MissionActions>().uploadCV(
-            filePath,
-            fileName,
-            onSendProgress: (sent, total) {
-              if (sent == 0) {
-                AppLogger.info('UploadFlow', '4. Primer callback onSendProgress');
-              }
-              if (sent == total) {
-                AppLogger.info('UploadFlow', '5. Último callback (100%)');
-              }
-              uploadProvider.updateDioProgress(sent, total);
-            },
-          );
+      AppLogger.info(
+        'UploadFlow',
+        '3. POST a /api/v1/cv/upload iniciado '
+        '(web=${kIsWeb && fileBytes != null})',
+      );
 
-      AppLogger.info('UploadFlow', '6. Respuesta backend recibida con éxito');
-      AppLogger.info('UploadFlow', '7. Cambio a Fase 2 (Análisis)');
+      final response = await missionActions.uploadCV(
+        // En Web no existe una ruta local utilizable por el navegador.
+        // El repositorio debe recibir los bytes.
+        filePath: kIsWeb ? null : filePath,
+        fileBytes: kIsWeb ? fileBytes : null,
+        fileName: fileName,
+        onSendProgress: (sent, total) {
+          uploadProvider.updateDioProgress(sent, total);
+        },
+      );
+
+      AppLogger.info(
+        'UploadFlow',
+        '6. Respuesta backend recibida con éxito',
+      );
+      AppLogger.info(
+        'UploadFlow',
+        '7. Cambio a Fase 2 (Análisis)',
+      );
+
       uploadProvider.completeTransfer();
 
       missionProvider.startMonitoring(
@@ -344,9 +361,19 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         initialSnapshot: response.snapshot,
       );
     } catch (e) {
-      AppLogger.error('UploadFlow', 'Error en el flujo de upload: $e');
+      final message = e.toString().replaceFirst('Exception: ', '');
+
+      AppLogger.error(
+        'UploadFlow',
+        'Error real en el flujo de upload: $message',
+        error: e,
+      );
+
       uploadProvider.setError(
-          'No pudimos conectar con el servidor. Por favor verifica tu conexión.');
+        message.isEmpty
+            ? 'No se pudo procesar el CV. Intenta nuevamente.'
+            : message,
+      );
     }
   }
 
@@ -392,23 +419,35 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'docx'],
+      withData: kIsWeb,
     );
 
     if (result == null || result.files.isEmpty) {
-      // User cancelled — go back to error state so they can choose again
-      AppLogger.warning('UploadFlow', '[PickNew] FilePicker cancelado por el usuario.');
-      uploadProvider.setError(
-          'Selección cancelada. Puedes elegir otro archivo o cerrar.');
+      // User cancelled
       return;
     }
 
     final file = result.files.single;
-    if (file.path == null) {
-      uploadProvider.setError('No se pudo leer la ruta del archivo seleccionado.');
+    final filePath = file.path;
+    final fileBytes = file.bytes;
+
+    if (!kIsWeb && (filePath == null || filePath.isEmpty)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: No se pudo obtener la ruta del archivo.')),
+      );
       return;
     }
 
-    // 5. Show confirmation before committing to new mission
+    if (kIsWeb && (fileBytes == null || fileBytes.isEmpty)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: No se pudieron leer los datos del archivo.')),
+      );
+      return;
+    }
+
+    // Show confirmation overlay
     if (!mounted) return;
     final confirmed = await _showFileConfirmation(
       context,
@@ -416,14 +455,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       fileSizeBytes: file.size,
     );
 
-    if (!confirmed || !mounted) {
-      uploadProvider.setError(
-          'Selección cancelada. Puedes elegir otro archivo o cerrar.');
-      return;
-    }
+    if (!confirmed || !mounted) return;
 
     // 6. Start the new upload (overlay is still open; startUpload resets it to progress mode)
-    uploadProvider.startUpload(file.path!);
+    uploadProvider.startUpload(file.name);
 
     // Capture providers before the async gap to satisfy use_build_context_synchronously
     final missionActionsForUpload = context.read<MissionActions>();
@@ -432,8 +467,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     try {
       AppLogger.info('UploadFlow', '[PickNew] POST iniciado con nuevo archivo');
       final response = await missionActionsForUpload.uploadCV(
-            file.path!,
-            file.name,
+            filePath: kIsWeb ? null : filePath,
+            fileBytes: kIsWeb ? fileBytes : null,
+            fileName: file.name,
             onSendProgress: (sent, total) {
               uploadProvider.updateDioProgress(sent, total);
             },

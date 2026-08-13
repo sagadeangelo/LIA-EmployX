@@ -1,4 +1,4 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 
 import '../api/api_client.dart';
 import '../models/upload_mission_response.dart';
@@ -11,9 +11,10 @@ class CVRepository {
     ApiClient? apiClient,
   }) : _apiClient = apiClient ?? ApiClient();
 
-  Future<UploadMissionResponse> uploadCV(
-    String filePath,
-    String fileName, {
+  Future<UploadMissionResponse> uploadCV({
+    String? filePath,
+    List<int>? fileBytes,
+    required String fileName,
     String? missionId,
     void Function(int sent, int total)? onSendProgress,
   }) async {
@@ -25,14 +26,22 @@ class CVRepository {
       missionId: missionId,
     );
 
-    final multipartFile =
-        await MultipartFile.fromFile(
-      filePath,
-      filename: fileName,
-      contentType: _contentTypeForFile(
-        fileName,
-      ),
-    );
+    MultipartFile multipartFile;
+    if (fileBytes != null) {
+      multipartFile = MultipartFile.fromBytes(
+        fileBytes,
+        filename: fileName,
+        contentType: _contentTypeForFile(fileName),
+      );
+    } else if (filePath != null) {
+      multipartFile = await MultipartFile.fromFile(
+        filePath,
+        filename: fileName,
+        contentType: _contentTypeForFile(fileName),
+      );
+    } else {
+      throw ArgumentError('Se debe proporcionar filePath o fileBytes para subir el CV.');
+    }
 
     final formData = FormData.fromMap({
       'file': multipartFile,

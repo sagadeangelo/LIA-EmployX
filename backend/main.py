@@ -11,6 +11,8 @@ from backend.api.routes.runtime import router as runtime_router
 from backend.api.routes.health import router as health_router
 from backend.modules.cv.controllers.cv_controller import router as cv_controller_router
 from backend.modules.profile.controllers.profile_controller import router as profile_router
+from backend.modules.location.controllers.location_controller import router as location_router
+from backend.api.routes.jobs_proxy import router as jobs_proxy_router
 
 from backend.storage.json_provider import JsonStorageProvider
 from backend.modules.mission.repositories import MissionRepository, MissionEventRepository
@@ -79,7 +81,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -92,6 +94,8 @@ app.include_router(cv_controller_router)
 app.include_router(profile_router)
 app.include_router(runtime_router)
 app.include_router(health_router)
+app.include_router(location_router)
+app.include_router(jobs_proxy_router)
 
 
 @app.get("/")
