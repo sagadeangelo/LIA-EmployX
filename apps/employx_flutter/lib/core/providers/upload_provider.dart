@@ -1,18 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'dart:io';
 
-enum UploadPhase {
-  transfer,
-  analysis,
-}
-
-enum TransferStep {
-  preparing,
-  uploading,
-  verifying,
-  completed,
-}
-
+enum UploadPhase { transfer, analysis }
+enum TransferStep { preparing, uploading, verifying, completed }
 enum MissionStage {
   receiveFile,
   storeFile,
@@ -28,26 +17,17 @@ enum MissionStage {
 
 class UploadProvider extends ChangeNotifier {
   UploadPhase _currentPhase = UploadPhase.transfer;
-
-  // Transfer state
   TransferStep _transferStep = TransferStep.preparing;
   double _transferProgress = 0.0;
   String _fileName = '';
   int _fileSize = 0;
   double _speedMBps = 0.0;
   Duration _eta = Duration.zero;
-
-  // Analysis state
   MissionStage _missionStage = MissionStage.receiveFile;
-
-  // Error state — separated from message to distinguish idle vs active error
   String _errorMessage = '';
   bool _hasError = false;
-
   bool _isUploading = false;
   bool _isCompleted = false;
-
-  // Timing
   DateTime? _startTime;
   DateTime? _lastUploadTime;
   int _lastUploadedBytes = 0;
@@ -67,13 +47,10 @@ class UploadProvider extends ChangeNotifier {
   bool get isCompleted => _isCompleted;
   Duration get totalTime => _totalTime;
 
-  // Progress for the Analysis phase (0.0 to 1.0)
-  double get analysisProgress {
-    // 10 steps total
-    return (_missionStage.index + 1) / MissionStage.values.length;
-  }
+  double get analysisProgress =>
+      (_missionStage.index + 1) / MissionStage.values.length;
 
-  void startUpload(String path) {
+  void startUpload(String fileName, {int fileSize = 0}) {
     _isUploading = true;
     _isCompleted = false;
     _hasError = false;
@@ -81,34 +58,23 @@ class UploadProvider extends ChangeNotifier {
     _currentPhase = UploadPhase.transfer;
     _transferStep = TransferStep.preparing;
     _transferProgress = 0.0;
-    _fileName = path.split(Platform.pathSeparator).last;
-    try {
-      _fileSize = File(path).lengthSync();
-    } catch (_) {
-      _fileSize = 0;
-    }
+    _fileName = fileName;
+    _fileSize = fileSize;
     _speedMBps = 0.0;
     _eta = Duration.zero;
-
     _startTime = DateTime.now();
     _lastUploadTime = DateTime.now();
     _lastUploadedBytes = 0;
-
     _missionStage = MissionStage.receiveFile;
     notifyListeners();
   }
 
   void updateDioProgress(int sent, int total) {
-    if (total <= 0) return;
-
-    if (_currentPhase != UploadPhase.transfer) return;
-
+    if (total <= 0 || _currentPhase != UploadPhase.transfer) return;
     if (_transferStep == TransferStep.preparing) {
       _transferStep = TransferStep.uploading;
     }
-
-    _transferProgress = sent / total;
-
+    _transferProgress = (sent / total).clamp(0.0, 1.0);
     final now = DateTime.now();
     if (_lastUploadTime != null) {
       final elapsedMs = now.difference(_lastUploadTime!).inMilliseconds;
@@ -116,21 +82,13 @@ class UploadProvider extends ChangeNotifier {
         final bytesSinceLast = sent - _lastUploadedBytes;
         final speedBps = bytesSinceLast / (elapsedMs / 1000);
         _speedMBps = speedBps / (1024 * 1024);
-
         if (speedBps > 0) {
-          final remainingBytes = total - sent;
-          final remainingSeconds = remainingBytes / speedBps;
-          _eta = Duration(seconds: remainingSeconds.toInt());
+          _eta = Duration(seconds: ((total - sent) / speedBps).toInt());
         }
-
         _lastUploadedBytes = sent;
         _lastUploadTime = now;
       }
-    } else {
-      _lastUploadTime = now;
-      _lastUploadedBytes = sent;
     }
-
     if (_transferProgress >= 1.0 && _transferStep != TransferStep.completed) {
       _transferStep = TransferStep.verifying;
       _speedMBps = 0.0;
@@ -140,56 +98,32 @@ class UploadProvider extends ChangeNotifier {
   }
 
   void completeTransfer() {
-    if (_currentPhase == UploadPhase.transfer) {
-      _transferStep = TransferStep.completed;
-      _transferProgress = 1.0;
-      _currentPhase = UploadPhase.analysis;
-      notifyListeners();
-    }
+    if (_currentPhase != UploadPhase.transfer) return;
+    _transferStep = TransferStep.completed;
+    _transferProgress = 1.0;
+    _currentPhase = UploadPhase.analysis;
+    notifyListeners();
   }
 
   void updateAnalysisStep(String backendStep) {
-    if (_currentPhase == UploadPhase.transfer) {
-      completeTransfer();
-    }
-
+    if (_currentPhase == UploadPhase.transfer) completeTransfer();
     switch (backendStep) {
-      case 'RECEIVE_FILE':
-        _missionStage = MissionStage.receiveFile;
-        break;
-      case 'STORE_FILE':
-        _missionStage = MissionStage.storeFile;
-        break;
-      case 'DETECT_FORMAT':
-        _missionStage = MissionStage.detectFormat;
-        break;
-      case 'READ_DOCUMENT':
-        _missionStage = MissionStage.readDocument;
-        break;
-      case 'EXTRACT_TEXT':
-        _missionStage = MissionStage.extractText;
-        break;
-      case 'NORMALIZE_TEXT':
-        _missionStage = MissionStage.normalizeText;
-        break;
-      case 'BUILD_PROFILE':
-        _missionStage = MissionStage.buildProfile;
-        break;
-      case 'SAVE_PROFILE':
-        _missionStage = MissionStage.saveProfile;
-        break;
-      case 'UPDATE_RUNTIME':
-        _missionStage = MissionStage.updateRuntime;
-        break;
-      case 'COMPLETE':
-        _missionStage = MissionStage.complete;
-        break;
+      case 'RECEIVE_FILE': _missionStage = MissionStage.receiveFile; break;
+      case 'STORE_FILE': _missionStage = MissionStage.storeFile; break;
+      case 'DETECT_FORMAT': _missionStage = MissionStage.detectFormat; break;
+      case 'READ_DOCUMENT': _missionStage = MissionStage.readDocument; break;
+      case 'EXTRACT_TEXT': _missionStage = MissionStage.extractText; break;
+      case 'NORMALIZE_TEXT': _missionStage = MissionStage.normalizeText; break;
+      case 'BUILD_PROFILE': _missionStage = MissionStage.buildProfile; break;
+      case 'SAVE_PROFILE': _missionStage = MissionStage.saveProfile; break;
+      case 'UPDATE_RUNTIME': _missionStage = MissionStage.updateRuntime; break;
+      case 'COMPLETE': _missionStage = MissionStage.complete; break;
     }
     notifyListeners();
   }
 
-  void setError(String userFriendlyMessage) {
-    _errorMessage = userFriendlyMessage;
+  void setError(String message) {
+    _errorMessage = message;
     _hasError = true;
     _isUploading = false;
     notifyListeners();
@@ -198,7 +132,7 @@ class UploadProvider extends ChangeNotifier {
   void clearError() {
     _errorMessage = '';
     _hasError = false;
-    _isUploading = true; // Back to progress mode
+    _isUploading = true;
     notifyListeners();
   }
 
@@ -213,8 +147,6 @@ class UploadProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Full reset — no residual state whatsoever.
-  /// Call this before detaching from a mission or before a Hot Restart.
   void reset() {
     _isUploading = false;
     _isCompleted = false;
