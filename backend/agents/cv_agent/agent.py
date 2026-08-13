@@ -1,13 +1,3 @@
-"""
-===============================================================
-LIA EmployX
-
-CV Specialist
-
-Especialista encargado de analizar el CV del usuario.
-===============================================================
-"""
-
 from __future__ import annotations
 
 import os
@@ -24,7 +14,6 @@ from backend.modules.cv.mappers.professional_profile_mapper import ProfessionalP
 
 
 class CVParserAgent(BaseAgent):
-
     def __init__(self):
         super().__init__()
         self.extraction_service = ExtractionService()
@@ -44,12 +33,11 @@ class CVParserAgent(BaseAgent):
         )
 
     def can_execute(self, context: AgentContext) -> bool:
-        # Ejecuta si el archivo existe pero el cv_document o metadata aún no ha sido parseado
-        has_file = context.mission.state.file_path and os.path.exists(
+        has_file = bool(
             context.mission.state.file_path
+            and os.path.exists(context.mission.state.file_path)
         )
-        needs_parsing = context.mission.state.metadata is None
-        return has_file and needs_parsing
+        return has_file and context.mission.state.metadata is None
 
     async def execute(self, context: AgentContext) -> AgentResult:
         file_path = context.mission.state.file_path
@@ -61,10 +49,9 @@ class CVParserAgent(BaseAgent):
 
         try:
             cv_document = self.extraction_service.process(
-                Path(file_path), mission_id=context.mission.id
+                Path(file_path),
+                mission_id=context.mission.id,
             )
-
-            # Bridge to state
             cv_doc_dict = cv_document.model_dump(mode="json")
 
             events = [
@@ -90,10 +77,14 @@ class CVParserAgent(BaseAgent):
             self._set_status("completed")
             self.log("Parseo de documento completado exitosamente.")
 
-            # Create Profile
             repo = ProfileRepository()
-            profile = ProfessionalProfileMapper.from_cv_document(cv_document)
-            repo.save(profile)
+            profile_id = context.mission.state.profile_id
+            profile = repo.get_by_id(profile_id) if profile_id else None
+
+            if profile is None:
+                profile = ProfessionalProfileMapper.from_cv_document(cv_document)
+                profile.user_id = context.mission.user_id
+                repo.save(profile)
 
             return AgentResult.ok(
                 progress=100,
