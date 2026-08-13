@@ -1,16 +1,19 @@
 from pydantic import BaseModel
 
 from backend.modules.mission.models import MissionSnapshot
-from backend.modules.profile.models.professional_profile import ProfessionalProfile
+from backend.modules.cv.models.cv_document import CVDocument
 
 
 class UploadMissionResponse(BaseModel):
     """
-    Response returned after the upload boundary completes.
+    Respuesta del endpoint de subida de CV.
 
-    The Mission snapshot identifies the runtime operation while `cv`
-    is the persisted ProfessionalProfile consumed by the Flutter UI.
+    snapshot:
+        Estado de la Mission y del Runtime.
+
+    cv:
+        CVDocument estructurado generado por el pipeline.
     """
 
     snapshot: MissionSnapshot
-    cv: ProfessionalProfile | None = None
+    cv: CVDocument | None = None
