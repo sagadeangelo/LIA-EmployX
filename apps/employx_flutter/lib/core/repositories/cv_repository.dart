@@ -1,4 +1,4 @@
-﻿import 'package:dio/dio.dart';
+import 'package:dio/dio.dart';
 
 import '../api/api_client.dart';
 import '../models/upload_mission_response.dart';
@@ -14,6 +14,7 @@ class CVRepository {
   Future<UploadMissionResponse> uploadCV(
     String filePath,
     String fileName, {
+    List<int>? fileBytes,
     String? missionId,
     void Function(int sent, int total)? onSendProgress,
   }) async {
@@ -25,19 +26,25 @@ class CVRepository {
       missionId: missionId,
     );
 
-    final multipartFile =
-        await MultipartFile.fromFile(
-      filePath,
-      filename: fileName,
-      contentType: _contentTypeForFile(
-        fileName,
-      ),
-    );
+    final multipartFile = fileBytes != null
+        ? MultipartFile.fromBytes(
+            fileBytes,
+            filename: fileName,
+            contentType: _contentTypeForFile(fileName),
+          )
+        : await MultipartFile.fromFile(
+            filePath,
+            filename: fileName,
+            contentType: _contentTypeForFile(fileName),
+          );
+
+    if (multipartFile.length <= 0) {
+      throw StateError('El archivo seleccionado está vacío.');
+    }
 
     final formData = FormData.fromMap({
       'file': multipartFile,
-      if (missionId != null &&
-          missionId.isNotEmpty)
+      if (missionId != null && missionId.isNotEmpty)
         'mission_id': missionId,
     });
 
@@ -46,25 +53,20 @@ class CVRepository {
       'POST /api/v1/cv/upload',
       missionId: missionId,
     );
-
     AppLogger.info(
       'CVRepository',
-      'Archivo: $fileName',
+      'Archivo: $fileName (${multipartFile.length} bytes)',
       missionId: missionId,
     );
 
     try {
-      final response =
-          await _apiClient.post(
+      final response = await _apiClient.post(
         '/cv/upload',
         data: formData,
         onSendProgress: onSendProgress,
       );
 
-      final durationMs =
-          DateTime.now()
-              .difference(startTime)
-              .inMilliseconds;
+      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
 
       AppLogger.info(
         'CVRepository',
@@ -75,24 +77,18 @@ class CVRepository {
 
       if (response.statusCode != 200) {
         throw Exception(
-          'CV upload failed: '
-          '${response.statusCode} '
-          '${response.statusMessage}',
+          'CV upload failed: ${response.statusCode} ${response.statusMessage}',
         );
       }
 
       if (response.data is! Map) {
         throw Exception(
-          'Invalid CV upload response: '
-          'expected JSON object.',
+          'Invalid CV upload response: expected JSON object.',
         );
       }
 
-      final result =
-          UploadMissionResponse.fromJson(
-        Map<String, dynamic>.from(
-          response.data as Map,
-        ),
+      final result = UploadMissionResponse.fromJson(
+        Map<String, dynamic>.from(response.data as Map),
       );
 
       AppLogger.info(
@@ -104,10 +100,7 @@ class CVRepository {
 
       return result;
     } on DioException catch (e) {
-      final durationMs =
-          DateTime.now()
-              .difference(startTime)
-              .inMilliseconds;
+      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
 
       AppLogger.error(
         'CVRepository',
@@ -116,13 +109,9 @@ class CVRepository {
         durationMs: durationMs,
         error: e,
       );
-
       rethrow;
     } catch (e) {
-      final durationMs =
-          DateTime.now()
-              .difference(startTime)
-              .inMilliseconds;
+      final durationMs = DateTime.now().difference(startTime).inMilliseconds;
 
       AppLogger.error(
         'CVRepository',
@@ -131,47 +120,27 @@ class CVRepository {
         durationMs: durationMs,
         error: e,
       );
-
       rethrow;
     }
   }
 
-  DioMediaType _contentTypeForFile(
-    String fileName,
-  ) {
-    final extension =
-        fileName.toLowerCase().split('.').last;
+  DioMediaType _contentTypeForFile(String fileName) {
+    final extension = fileName.toLowerCase().split('.').last;
 
     switch (extension) {
       case 'pdf':
-        return DioMediaType(
-          'application',
-          'pdf',
-        );
-
+        return DioMediaType('application', 'pdf');
       case 'docx':
         return DioMediaType(
           'application',
           'vnd.openxmlformats-officedocument.wordprocessingml.document',
         );
-
       case 'doc':
-        return DioMediaType(
-          'application',
-          'msword',
-        );
-
+        return DioMediaType('application', 'msword');
       case 'txt':
-        return DioMediaType(
-          'text',
-          'plain',
-        );
-
+        return DioMediaType('text', 'plain');
       default:
-        return DioMediaType(
-          'application',
-          'octet-stream',
-        );
+        return DioMediaType('application', 'octet-stream');
     }
   }
 }
