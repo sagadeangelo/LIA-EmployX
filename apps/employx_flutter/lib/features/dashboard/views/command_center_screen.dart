@@ -1546,6 +1546,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final colors = context.liaColors;
     final typography = context.liaTypography;
     final spacings = context.liaSpacings;
+    final snapshot = context.watch<MissionProvider>().snapshot;
 
     final agents = [
       'Career Agent',
@@ -1558,6 +1559,70 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       'Negotiation Coach'
     ];
 
+    String normalizeName(String value) {
+      return value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    }
+
+    String backendNameFor(String uiName) {
+      switch (uiName) {
+        case 'Cover Letter AI':
+          return 'Cover Letter Generator';
+        default:
+          return uiName;
+      }
+    }
+
+    dynamic findAgentStatus(String uiName) {
+      if (snapshot == null) return null;
+
+      final target = normalizeName(backendNameFor(uiName));
+      for (final agentStatus in snapshot.agentStatuses) {
+        if (normalizeName(agentStatus.name) == target) {
+          return agentStatus;
+        }
+      }
+      return null;
+    }
+
+    String displayStatus(dynamic agentStatus) {
+      if (agentStatus == null) return 'N/A';
+
+      final status = agentStatus.status.toString().trim().toUpperCase();
+      switch (status) {
+        case 'COMPLETED':
+        case 'SUCCESS':
+        case 'READY':
+          return 'READY';
+        case 'RUNNING':
+          return 'RUNNING';
+        case 'SKIPPED':
+          return 'SKIPPED';
+        case 'ERROR':
+        case 'FAILED':
+          return 'ERROR';
+        case '':
+          return 'N/A';
+        default:
+          return status;
+      }
+    }
+
+    Color statusColor(String status) {
+      switch (status) {
+        case 'READY':
+          return colors.success;
+        case 'RUNNING':
+          return colors.accentPrimary;
+        case 'ERROR':
+          return colors.error;
+        case 'SKIPPED':
+        case 'N/A':
+          return colors.textMuted;
+        default:
+          return colors.textSecondary;
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1568,6 +1633,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: agents.map((agent) {
+              final status = displayStatus(findAgentStatus(agent));
               return Padding(
                 padding: EdgeInsets.only(
                     bottom: agent == agents.last ? 0 : spacings.sm),
@@ -1585,7 +1651,11 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    LiaStatusIndicator(color: colors.textMuted, label: 'N/A'),
+                    LiaStatusIndicator(
+                      color: statusColor(status),
+                      label: status,
+                      isPulsing: status == 'RUNNING',
+                    ),
                   ],
                 ),
               );
