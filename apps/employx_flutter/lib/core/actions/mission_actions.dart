@@ -44,7 +44,14 @@ class MissionActions extends ChangeNotifier {
 
   MissionModel? get currentMission => _currentMission;
 
-  ProfessionalProfile? get currentProfile => _currentProfile;
+  /// Fuente de verdad para el perfil mostrado por el Command Center.
+  ///
+  /// ProfileHubProvider es la instancia global que se sincroniza
+  /// después de completar una misión. Si ya existe un perfil activo
+  /// allí, siempre devolvemos ese perfil actualizado; de lo contrario
+  /// conservamos el perfil local cargado previamente.
+  ProfessionalProfile? get currentProfile =>
+      _profileHubProvider.activeProfessionalProfile ?? _currentProfile;
 
   bool get isLoading => _isLoading;
 
@@ -56,7 +63,7 @@ class MissionActions extends ChangeNotifier {
     return status != 'COMPLETED' && status != 'FAILED' && status != 'CANCELLED';
   }
 
-  bool get hasProfile => _currentProfile != null;
+  bool get hasProfile => currentProfile != null;
 
   // ============================================================
   // MISSION STATE
