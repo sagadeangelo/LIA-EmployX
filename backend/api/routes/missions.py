@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 
 from backend.modules.mission.models import (
@@ -20,14 +20,12 @@ from backend.runtime.mission_state import MissionStage, MissionStatus
 
 router = APIRouter(prefix="/api/v1/missions", tags=["Missions"])
 
-# Global repositories for read access (safe at import time)
 storage_provider = JsonStorageProvider()
 mission_repo = MissionRepository(storage_provider)
 event_repo = MissionEventRepository(storage_provider)
 
 
 def get_mission_controller():
-    # Use the global singleton initialized in lifespan
     runtime_registry = get_runtime_registry()
     return MissionController(mission_repo, event_repo, runtime_registry._agent_registry)
 
@@ -40,6 +38,7 @@ async def create_mission(mission_data: MissionCreate):
     return MissionSnapshot(
         mission=mission,
         runtime=RuntimeStatus(online=True, active_agents=[], current_agent=None),
+        agent_statuses=controller.get_agent_status(mission.id),
         timeline=[],
         progress=mission.progress,
         current_step=mission.current_step.value,
@@ -57,12 +56,12 @@ async def list_missions(status: Optional[str] = None):
     missions = mission_repo.get_all()
     if status == "active":
         active_missions = [
-            m for m in missions 
+            m for m in missions
             if m.status not in (MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.CANCELLED)
         ]
         active_missions.sort(key=lambda x: x.created_at, reverse=True)
         return active_missions
-    
+
     missions.sort(key=lambda x: x.created_at, reverse=True)
     return missions
 
@@ -72,8 +71,10 @@ async def get_mission_snapshot(mission_id: str):
     mission = mission_repo.get_by_id(mission_id)
     if not mission:
         raise HTTPException(status_code=404, detail="Mission not found")
+
     events = event_repo.get_by_mission(mission_id)
     controller = get_mission_controller()
+
     return MissionSnapshot(
         mission=mission,
         runtime=RuntimeStatus(
@@ -81,6 +82,7 @@ async def get_mission_snapshot(mission_id: str):
             active_agents=mission.active_agents,
             current_agent=mission.current_agent,
         ),
+        agent_statuses=controller.get_agent_status(mission_id),
         timeline=events,
         progress=mission.progress,
         current_step=mission.current_step.value,
