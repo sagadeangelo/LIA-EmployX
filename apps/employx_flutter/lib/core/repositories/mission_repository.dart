@@ -22,6 +22,17 @@ class MissionRepository {
     return data.map((json) => MissionModel.fromJson(json)).toList();
   }
 
+  Future<MissionModel?> getLatestMission() async {
+    final response = await _apiClient.get('/missions');
+    final List<dynamic> data = response.data;
+
+    if (data.isEmpty) {
+      return null;
+    }
+
+    return MissionModel.fromJson(data.first as Map<String, dynamic>);
+  }
+
   Future<MissionModel> updateMission(String id, Map<String, dynamic> data) async {
     final response = await _apiClient.put('/missions/$id', data: data);
     return MissionModel.fromJson(response.data);
