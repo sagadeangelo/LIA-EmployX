@@ -98,7 +98,7 @@ class CVRepository:
         )
 
         for index, existing in enumerate(data):
-            if existing.get("id") == cv.id:
+            if str(existing.get("id", "")).strip() == str(cv.id).strip():
                 data[index] = cv_dict
                 self._write_all(data)
                 return cv
@@ -127,10 +127,13 @@ class CVRepository:
             return None
 
         for item in self._load_raw():
-            if str(item.get("id", "")).strip() == cv_id:
-                return CVDocument.model_validate(
-                    item
-                )
+            if str(item.get("id", "")).strip() != cv_id:
+                continue
+
+            try:
+                return CVDocument.model_validate(item)
+            except Exception:
+                return None
 
         return None
 
@@ -162,9 +165,59 @@ class CVRepository:
                     CVDocument.model_validate(item)
                 )
             except Exception:
-                # No permitir que un CV corrupto bloquee
+                # Un CV corrupto no debe bloquear
                 # la recuperación del resto.
                 continue
+
+        result.sort(
+            key=lambda cv: cv.updated_at,
+            reverse=True,
+        )
+
+        return result
+
+    # ==========================================================
+    # GET ALL
+    # ==========================================================
+
+    def get_all(
+        self,
+        user_id: Optional[str] = None,
+    ) -> List[CVDocument]:
+        """
+        Devuelve todos los CV válidos almacenados.
+
+        Si user_id es proporcionado, devuelve únicamente
+        los CV pertenecientes a ese usuario.
+
+        Se mantiene esta firma por compatibilidad con
+        consumidores existentes del repositorio.
+        """
+
+        normalized_user_id = (user_id or "").strip()
+
+        result: List[CVDocument] = []
+
+        for item in self._load_raw():
+            if normalized_user_id:
+                item_user_id = str(
+                    item.get("user_id", "")
+                ).strip()
+
+                if item_user_id != normalized_user_id:
+                    continue
+
+            try:
+                result.append(
+                    CVDocument.model_validate(item)
+                )
+            except Exception:
+                continue
+
+        result.sort(
+            key=lambda cv: cv.updated_at,
+            reverse=True,
+        )
 
         return result
 
@@ -191,36 +244,15 @@ class CVRepository:
 
         original_length = len(data)
 
-        data = [
+        remaining = [
             item
             for item in data
             if str(item.get("id", "")).strip() != cv_id
         ]
 
-        if len(data) == original_length:
+        if len(remaining) == original_length:
             return False
 
-        self._write_all(data)
+        self._write_all(remaining)
 
         return True
-
-    # ==========================================================
-    # GET ALL
-    # ==========================================================
-
-    def get_all(self) -> List[CVDocument]:
-        """
-        Devuelve todos los CV válidos almacenados.
-        """
-
-        result: List[CVDocument] = []
-
-        for item in self._load_raw():
-            try:
-                result.append(
-                    CVDocument.model_validate(item)
-                )
-            except Exception:
-                continue
-
-        return result
