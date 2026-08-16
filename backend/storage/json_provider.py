@@ -38,7 +38,7 @@ class JsonStorageProvider(StorageProvider):
 
     def get_mission(self, mission_id: str) -> Optional[Dict[str, Any]]:
         data = self._load(self.mission_file)
-        return next((m for m in data if m.get("id") == mission_id), None
+        return next((m for m in data if m.get("id") == mission_id), None)
 
     def list_missions(self) -> List[Dict[str, Any]]:
         return self._load(self.mission_file)
