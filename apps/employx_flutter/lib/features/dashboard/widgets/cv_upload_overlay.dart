@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../core/providers/upload_provider.dart';
 import '../../../core/providers/mission_provider.dart';
 import '../../../core/models/mission_event_model.dart';
+import '../../profile/providers/profile_hub_provider.dart';
 import 'neon_progress_bar.dart';
 
 /// Callbacks that the Overlay exposes — all business logic lives in the parent.
@@ -114,10 +115,10 @@ class _CVUploadOverlayState extends State<CVUploadOverlay>
       final stepStr = snapshot.mission.currentStep;
       uploadProvider.updateAnalysisStep(stepStr);
 
-      if (snapshot.mission.status == 'COMPLETED' ||
-          snapshot.mission.status == 'WAITING_AGENT' ||
-          stepStr == 'COMPLETE') {
+      if (snapshot.mission.status == 'COMPLETED') {
         uploadProvider.completeProcess();
+        missionProvider.stopMonitoring();
+        context.read<ProfileHubProvider>().refreshActiveProfessionalProfile();
       } else if (snapshot.mission.status == 'FAILED') {
         // Extract user-friendly error from the timeline
         String userMessage = 'No pudimos procesar tu CV. Por favor intenta nuevamente.';
@@ -221,7 +222,8 @@ class _CVUploadOverlayState extends State<CVUploadOverlay>
                         centerText:
                             uploadProvider.currentPhase == UploadPhase.analysis
                                 ? _getAnalysisMainText(
-                                    uploadProvider.missionStage)
+                                    uploadProvider.missionStage,
+                                    missionProvider.snapshot?.mission.status ?? '')
                                 : null,
                       ),
 
@@ -611,7 +613,10 @@ class _CVUploadOverlayState extends State<CVUploadOverlay>
   // Progress UI helpers
   // ---------------------------------------------------------------------------
 
-  String _getAnalysisMainText(MissionStage step) {
+  String _getAnalysisMainText(MissionStage step, String status) {
+    if (step == MissionStage.complete && (status == 'RUNNING' || status == 'WAITING_AGENT')) {
+      return 'LIA está analizando tu perfil...';
+    }
     switch (step) {
       case MissionStage.receiveFile:
         return 'Recibiendo...';

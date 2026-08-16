@@ -269,12 +269,53 @@ String _formatPostedDate(DateTime? date) {
             (skill) => skill.toLowerCase().contains(query),
           );
 
-      // Filtro local secundario: si la API ya filtró por país,
-      // este filtra además por ciudad/región cuando el usuario
-      // escribe una ubicación y la API no encontró coincidencias
-      // estructuradas.
-      final matchesLocation = locationText.isEmpty ||
-          job.location.toLowerCase().contains(locationText) ||
+      // Filtro local secundario
+      bool checkLocation(String loc) {
+        if (locationText.isEmpty) return true;
+
+        String normalizeString(String s) {
+          String norm = s.toLowerCase()
+              .replaceAll('á', 'a').replaceAll('é', 'e').replaceAll('í', 'i')
+              .replaceAll('ó', 'o').replaceAll('ú', 'u').replaceAll('ü', 'u');
+          
+          final List<String> parts = norm.split(',').map((p) => p.trim()).toList();
+          for (int i = 0; i < parts.length; i++) {
+            if (parts[i] == 'mx' || parts[i] == 'mex') {
+              parts[i] = 'mexico';
+            } else if (parts[i] == 'us' || parts[i] == 'usa' || parts[i] == 'united states of america') {
+              parts[i] = 'united states';
+            }
+          }
+          return parts.join(', ');
+        }
+        
+        final normalizedLoc = normalizeString(loc);
+        final normalizedText = normalizeString(locationText);
+            
+        final locParts = normalizedLoc.split(',').map((e) => e.trim()).toList();
+        final queryParts = normalizedText.split(',').map((e) => e.trim()).toList();
+        
+        bool allMatch = true;
+        for (final q in queryParts) {
+          if (q.isEmpty) continue;
+          bool partMatched = false;
+          for (final l in locParts) {
+            if (l.contains(q) || q.contains(l)) {
+              partMatched = true;
+              break;
+            }
+          }
+          if (!partMatched) {
+            allMatch = false;
+            break;
+          }
+        }
+        if (allMatch) return true;
+        
+        return normalizedLoc.contains(normalizedText.trim());
+      }
+
+      final matchesLocation = checkLocation(job.location) ||
           job.mode.toLowerCase().contains('remoto') ||
           job.mode.toLowerCase().contains('remote');
 

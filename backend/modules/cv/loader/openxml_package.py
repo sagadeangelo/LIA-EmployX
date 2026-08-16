@@ -11,10 +11,14 @@ from lxml import etree
 
 WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+VML_NS = "urn:schemas-microsoft-com:vml"
 
 NS = {
     "w": WORD_NS,
     "a": DRAWING_NS,
+    "wps": WPS_NS,
+    "v": VML_NS,
 }
 
 W_TEXT = f"{{{WORD_NS}}}t"
@@ -219,15 +223,20 @@ def text_from_element(
 
 def is_inside(
     element: etree._Element,
-    namespace_tag: str,
+    namespace_tags: set[str] | tuple[str, ...],
 ) -> bool:
     """
-    Determine whether an element is nested inside a given XML tag.
+    Determine whether an element is nested inside any given XML tags.
     """
+    if isinstance(namespace_tags, str):
+        namespace_tags = {namespace_tags}
+    else:
+        namespace_tags = set(namespace_tags)
+
     current = element.getparent()
 
     while current is not None:
-        if current.tag == namespace_tag:
+        if current.tag in namespace_tags:
             return True
 
         current = current.getparent()

@@ -59,8 +59,9 @@ class ExperienceBuilder(
     _DATE_PATTERN = re.compile(
         r"(?P<start>(?:19|20)\d{2})"
         r"\s*"
-        r"(?:-|–|—|a|al)"
+        r"(?:-|–|—|a|al|to)"
         r"\s*"
+        r"(?:(?:[A-Za-z]{3,10}\s+|0?\d[/\-])?\s*)?"
         r"(?P<end>"
         r"(?:19|20)\d{2}"
         r"|presente"

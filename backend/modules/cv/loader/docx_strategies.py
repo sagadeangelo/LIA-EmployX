@@ -10,6 +10,8 @@ from backend.modules.cv.loader.extraction_models import ExtractionChunk
 from backend.modules.cv.loader.openxml_package import (
     NS,
     WORD_NS,
+    WPS_NS,
+    VML_NS,
     OpenXMLPackage,
     element_identity,
     is_inside,
@@ -17,7 +19,11 @@ from backend.modules.cv.loader.openxml_package import (
 )
 
 
-TEXTBOX_TAG = f"{{{WORD_NS}}}txbxContent"
+TEXTBOX_TAGS = {
+    f"{{{WORD_NS}}}txbxContent",
+    f"{{{WPS_NS}}}txbx",
+    f"{{{VML_NS}}}textbox",
+}
 
 
 class DOCXExtractionStrategy(ABC):
@@ -140,30 +146,47 @@ class TextBoxStrategy(DOCXExtractionStrategy):
         for part_name in package.story_parts():
             root = package.root(part_name)
 
-            for textbox in root.xpath(
-                ".//w:txbxContent",
-                namespaces=NS,
-            ):
-                for paragraph in textbox.xpath(
-                    ".//w:p",
-                    namespaces=NS,
-                ):
-                    text = text_from_element(paragraph)
-
-                    if text:
-                        chunks.append(
-                            ExtractionChunk(
-                                text=text,
-                                source=self.name,
-                                part_name=part_name,
-                                ordinal=ordinal,
-                                identity=element_identity(
-                                    root,
-                                    paragraph,
-                                ),
+            for tag_name in TEXTBOX_TAGS:
+                # We extract the tag prefix and local name to build the xpath
+                # Or we can just use lxml iter()
+                for textbox in root.iter(tag_name):
+                    # For wps:txbx we need to iterate over w:t and a:t, 
+                    # but it could also contain w:p. The safest is to extract all text directly
+                    # from the textbox if it doesn't contain w:p, or use text_from_element.
+                    
+                    # Some textboxes have w:p, others just have w:t or a:t scattered.
+                    # We can iterate over w:p and then gather any orphans?
+                    # Let's extract text by looking for paragraphs first.
+                    paragraphs = textbox.xpath(".//w:p", namespaces=NS)
+                    
+                    if paragraphs:
+                        for paragraph in paragraphs:
+                            text = text_from_element(paragraph)
+                            if text:
+                                chunks.append(
+                                    ExtractionChunk(
+                                        text=text,
+                                        source=self.name,
+                                        part_name=part_name,
+                                        ordinal=ordinal,
+                                        identity=element_identity(root, paragraph),
+                                    )
+                                )
+                                ordinal += 1
+                    else:
+                        # Fallback for textboxes without w:p
+                        text = text_from_element(textbox)
+                        if text:
+                            chunks.append(
+                                ExtractionChunk(
+                                    text=text,
+                                    source=self.name,
+                                    part_name=part_name,
+                                    ordinal=ordinal,
+                                    identity=element_identity(root, textbox),
+                                )
                             )
-                        )
-                        ordinal += 1
+                            ordinal += 1
 
         return chunks
 
@@ -186,7 +209,7 @@ class DrawingMLStrategy(DOCXExtractionStrategy):
                 ".//a:txBody",
                 namespaces=NS,
             ):
-                if is_inside(text_body, TEXTBOX_TAG):
+                if is_inside(text_body, TEXTBOX_TAGS):
                     continue
 
                 for paragraph in text_body.xpath(
@@ -231,7 +254,7 @@ class OpenXMLStrategy(DOCXExtractionStrategy):
                 ".//w:p",
                 namespaces=NS,
             ):
-                if is_inside(paragraph, TEXTBOX_TAG):
+                if is_inside(paragraph, TEXTBOX_TAGS):
                     continue
 
                 text = text_from_element(paragraph)
@@ -250,5 +273,26 @@ class OpenXMLStrategy(DOCXExtractionStrategy):
                         )
                     )
                     ordinal += 1
+
+            # Recover orphan text nodes (not in w:p and not in textboxes)
+            # This is a last resort to catch everything
+            orphan_texts = []
+            for tag_type in ["w:t", "a:t"]:
+                for t in root.xpath(f".//{tag_type}", namespaces=NS):
+                    if not is_inside(t, {"{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"} | TEXTBOX_TAGS):
+                        if t.text and t.text.strip():
+                            orphan_texts.append(t.text.strip())
+                            
+            if orphan_texts:
+                chunks.append(
+                    ExtractionChunk(
+                        text=" ".join(orphan_texts),
+                        source=self.name,
+                        part_name=part_name,
+                        ordinal=ordinal,
+                        identity=element_identity(root, root),
+                    )
+                )
+                ordinal += 1
 
         return chunks

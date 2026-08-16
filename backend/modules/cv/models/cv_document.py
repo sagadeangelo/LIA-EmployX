@@ -1,3 +1,5 @@
+﻿from uuid import uuid4
+
 from pydantic import BaseModel, Field
 
 from backend.modules.cv.language.language_result import LanguageResult
@@ -21,6 +23,22 @@ class CVDocument(BaseModel):
     education, continuous training, certifications, skills and
     experience independently.
     """
+
+    # ==========================================================
+    # IDENTITY / PERSISTENCE
+    # ==========================================================
+
+    # Unique identifier for this CV document.
+    id: str = Field(
+        default_factory=lambda: str(uuid4())
+    )
+
+    # Temporary development identity.
+    # This will later be replaced by the authenticated user's ID.
+    user_id: str = "temp_user"
+
+    # Links this CV to the ProfessionalProfile generated from it.
+    professional_profile_id: str | None = None
 
     # ==========================================================
     # DOCUMENT

@@ -37,15 +37,22 @@ class MissionProvider extends ChangeNotifier {
     }
 
     final status = _snapshot!.mission.status;
-    int seconds = 2; // default
+    int seconds = 3; // default
 
-    if (status == 'RUNNING' || status == 'CREATED') {
-      seconds = 1;
-    } else if (status == 'WAITING_AGENT') {
-      seconds = 2;
+    if (status == 'RUNNING' || status == 'CREATED' || status == 'WAITING_AGENT') {
+      seconds = 3;
     } else if (status == 'COMPLETED' || status == 'FAILED' || status == 'CANCELLED') {
       stopMonitoring();
       return;
+    }
+
+    if (_consecutiveErrors > 0) {
+      // Exponential backoff up to 30 seconds
+      int multiplier = 1 << _consecutiveErrors; // 2, 4, 8, 16...
+      seconds = seconds * multiplier;
+      if (seconds > 30) {
+        seconds = 30;
+      }
     }
 
     _pollingTimer = Timer(Duration(seconds: seconds), () {

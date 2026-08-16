@@ -155,6 +155,48 @@ class ProfessionalProfileMapper:
                 document.experiences[0].position or ""
             )
 
+        total_months = 0
+        from datetime import datetime
+
+        if document.experiences:
+            intervals = []
+            now = datetime.now()
+
+            for exp in document.experiences:
+                start_year = getattr(exp.start_date, "year", None)
+                if not start_year:
+                    continue
+
+                start_month = getattr(exp.start_date, "month", 1) or 1
+                start_abs = start_year * 12 + start_month
+
+                end_year = getattr(exp.end_date, "year", None)
+                if end_year:
+                    end_month = getattr(exp.end_date, "month", 1) or 1
+                else:
+                    end_year = now.year
+                    end_month = now.month
+                end_abs = end_year * 12 + end_month
+
+                if end_abs > start_abs:
+                    intervals.append((start_abs, end_abs))
+
+            if intervals:
+                intervals.sort(key=lambda x: x[0])
+                merged = [intervals[0]]
+                for current in intervals[1:]:
+                    last = merged[-1]
+                    # If periods overlap or are exactly contiguous
+                    if current[0] <= last[1]:
+                        merged[-1] = (last[0], max(last[1], current[1]))
+                    else:
+                        merged.append(current)
+
+                for start, end in merged:
+                    total_months += (end - start)
+
+        years_of_experience = max(0, total_months // 12)
+
         profile.personal_info = PersonalInfo(
             name=contact.full_name or "",
             email=contact.email or "",
@@ -167,7 +209,7 @@ class ProfessionalProfileMapper:
                 document.professional_summary or ""
             ),
             current_position=current_position,
-            years_of_experience=0,
+            years_of_experience=years_of_experience,
         )
 
         # ======================================================

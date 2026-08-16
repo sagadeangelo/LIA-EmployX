@@ -1,39 +1,38 @@
 """
 LIA EmployX
 CV Section Splitter
-============================================================
+===================
 
 Divide el texto plano de un CV en secciones semánticas.
 
 Responsabilidades
 -----------------
 - Detectar encabezados reales.
-- Soportar encabezados visuales/decorativos.
-- Soportar encabezados pegados al contenido.
-- Evitar falsos positivos por palabras sueltas.
+- Detectar encabezados pegados al contenido.
+- Evitar falsos positivos.
 - Mantener separadas las secciones principales.
 - Deduplicar bloques repetidos.
-- Limpiar artefactos pequeños de extracción DOCX.
+- Limpiar artefactos de extracción DOCX.
 - Recuperar información personal desplazada.
 - Recuperar información personal fragmentada.
-- Recuperar cabeceras personales contaminando otras secciones.
-- Manejar encabezados duplicados.
-- Separar LIA Ecosystem como proyectos.
 - Evitar "Technologies" como falso encabezado dentro de Experience.
+- Soportar CVs con columnas/textboxes cuya estructura visual se pierde
+  durante la extracción.
 - No ejecutar OCR.
 - No construir modelos de dominio.
 
-La salida de este módulo es deliberadamente simple:
+La salida de este módulo es:
 
     dict[str, SectionResult]
 
-Los Builders son responsables de transformar posteriormente
-cada sección en modelos de dominio.
+Los Builders son responsables de convertir cada sección
+en modelos de dominio.
 """
 
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 
@@ -51,15 +50,9 @@ DetectionMethod = Literal[
     "none",
 ]
 
-ContactRegion = tuple[int, int]
-
 
 @dataclass(slots=True)
 class SectionResult:
-    """
-    Resultado de una sección detectada.
-    """
-
     text: str
     confidence: float
     detection: DetectionMethod
@@ -69,7 +62,7 @@ SectionMap = dict[SectionKey, SectionResult]
 
 
 # ============================================================================
-# EMPTY SECTION CONTRACT
+# EMPTY CONTRACT
 # ============================================================================
 
 _EMPTY_SECTIONS: Final[dict[SectionKey, str]] = {
@@ -85,7 +78,7 @@ _EMPTY_SECTIONS: Final[dict[SectionKey, str]] = {
 
 
 # ============================================================================
-# MAIN SECTION HEADERS
+# SECTION HEADERS
 # ============================================================================
 
 _SECTION_HEADERS: Final[
@@ -105,6 +98,7 @@ _SECTION_HEADERS: Final[
         "perfil",
         "objetivo",
     ],
+
     "experience": [
         "experiencia laboral",
         "experiencia profesional",
@@ -118,6 +112,7 @@ _SECTION_HEADERS: Final[
         "trayectoria profesional",
         "trayectoria",
     ],
+
     "education": [
         "formacion academica",
         "formacion",
@@ -128,6 +123,7 @@ _SECTION_HEADERS: Final[
         "education",
         "academic",
     ],
+
     "skills": [
         "habilidades tecnicas",
         "habilidades clave",
@@ -150,12 +146,19 @@ _SECTION_HEADERS: Final[
         "tech stack",
         "herramientas de ia",
         "herramientas ia",
+        "tecnologias y sistemas ia utilizados",
+        "tecnologias",
+        "technologies",
+        "herramientas y plataformas",
+        "desarrollo y arquitectura",
     ],
+
     "languages": [
         "idiomas",
         "languages",
         "language",
     ],
+
     "certifications": [
         "certificaciones",
         "certificados",
@@ -164,6 +167,7 @@ _SECTION_HEADERS: Final[
         "licenses",
         "licencias",
     ],
+
     "projects": [
         "proyectos personales",
         "proyectos",
@@ -180,17 +184,12 @@ _SECTION_HEADERS: Final[
 
 
 # ============================================================================
-# DECORATIVE PREFIXES
+# REGEX
 # ============================================================================
 
 _DECORATIVE_PREFIX_RE = re.compile(
     r"^[^A-Za-z0-9À-ÖØ-öø-ÿ]+"
 )
-
-
-# ============================================================================
-# CONTACT SIGNALS
-# ============================================================================
 
 _EMAIL_RE = re.compile(
     r"\b[A-Z0-9._%+\-]+"
@@ -200,29 +199,30 @@ _EMAIL_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 _PHONE_RE = re.compile(
     r"(?<!\d)"
-    r"(?:\+\d{1,3}[\s.-]?)?"
-    r"(?:\(?\d{2,4}\)?[\s.-]?)?"
-    r"\d{3}[\s.-]?"
+    r"(?:\+\d{1,3}[\s.\-]?)?"
+    r"(?:\(?\d{2,4}\)?[\s.\-]?)?"
+    r"\d{3}[\s.\-]?"
     r"\d{3,4}"
-    r"(?:[\s.-]?\d{2,4})?"
+    r"(?:[\s.\-]?\d{2,4})?"
     r"(?!\d)"
 )
-
 
 _LINKEDIN_RE = re.compile(
     r"\blinkedin\b",
     re.IGNORECASE,
 )
 
-
 _GITHUB_RE = re.compile(
     r"\bgithub\b",
     re.IGNORECASE,
 )
 
+
+# ============================================================================
+# SIGNALS
+# ============================================================================
 
 _CONTACT_MARKERS: Final[tuple[str, ...]] = (
     "linkedin",
@@ -236,7 +236,28 @@ _CONTACT_MARKERS: Final[tuple[str, ...]] = (
     "mobile",
     "tel",
     "telefono",
-    "teléfono",
+    "correo",
+)
+
+_TECH_MARKERS: Final[tuple[str, ...]] = (
+    "python",
+    "flutter",
+    "react",
+    "java",
+    "javascript",
+    "typescript",
+    "node",
+    "sql",
+    "docker",
+    "aws",
+    "html",
+    "css",
+    "ai",
+    "ia",
+    "artificial intelligence",
+    "inteligencia artificial",
+    "chatgpt",
+    "prompt",
 )
 
 
@@ -252,6 +273,13 @@ _PROFILE_TITLE_MARKERS: Final[tuple[str, ...]] = (
     "founder",
     "director",
     "lead",
+    "product manager",
+    "product owner",
+    "software developer",
+    "software engineer",
+    "full stack",
+    "frontend",
+    "backend",
     "desarrollador",
     "ingeniero",
     "diseñador",
@@ -282,14 +310,6 @@ _LOCATION_MARKERS: Final[tuple[str, ...]] = (
 )
 
 
-_FRAGMENTED_PROFILE_MARKERS: Final[tuple[str, ...]] = (
-    "linkedin",
-    "github",
-    "portfolio",
-    "git",
-)
-
-
 # ============================================================================
 # CLASS
 # ============================================================================
@@ -299,18 +319,9 @@ class CVSectionSplitter:
     """
     Divide un CV en secciones semánticas.
 
-    Estrategia:
-
-    1. Normalizar texto.
-    2. Dividir en bloques.
-    3. Expandir encabezados pegados.
-    4. Detectar fronteras semánticas.
-    5. Construir secciones.
-    6. Deduplicar bloques repetidos.
-    7. Resolver headers duplicados.
-    8. Recuperar contaminación de cabecera personal.
-    9. Recuperar información personal desplazada.
-    10. Limpiar idiomas.
+    La estrategia es deliberadamente conservadora:
+    primero se detectan encabezados explícitos y después se intenta
+    recuperar información personal desplazada por la extracción DOCX.
     """
 
     def __init__(self) -> None:
@@ -327,10 +338,6 @@ class CVSectionSplitter:
         self,
         text: str,
     ) -> SectionMap:
-        """
-        Divide el texto del CV en secciones.
-        """
-
         normalized = self._normalize(text)
 
         if not normalized:
@@ -338,7 +345,9 @@ class CVSectionSplitter:
 
         blocks = self._split_blocks(normalized)
 
-        blocks = self._expand_embedded_headers(blocks)
+        blocks = self._expand_embedded_headers(
+            blocks
+        )
 
         return self._build_sections(blocks)
 
@@ -346,10 +355,6 @@ class CVSectionSplitter:
         self,
         text: str,
     ) -> SectionMap:
-        """
-        Ejecuta split() e imprime un resumen.
-        """
-
         sections = self.split(text)
 
         self.print_summary(sections)
@@ -360,22 +365,20 @@ class CVSectionSplitter:
         self,
         sections: SectionMap,
     ) -> None:
-        """
-        Imprime métricas básicas de las secciones.
-        """
-
-        separator = "=" * 70
-
         print()
-        print(separator)
+        print("=" * 70)
         print("CV Sections")
-        print(separator)
+        print("=" * 70)
         print()
 
         for key in _EMPTY_SECTIONS:
             result = sections.get(
                 key,
-                SectionResult("", 0.0, "none"),
+                SectionResult(
+                    "",
+                    0.0,
+                    "none",
+                ),
             )
 
             print(
@@ -390,34 +393,38 @@ class CVSectionSplitter:
         self,
         text: str,
     ) -> SectionMap:
-        """
-        Ejecuta el splitter mostrando información diagnóstica.
-        """
-
-        separator = "=" * 70
-
         print()
-        print(separator)
+        print("=" * 70)
         print("DEBUG — CV Section Splitter")
-        print(separator)
+        print("=" * 70)
 
         normalized = self._normalize(text)
 
-        blocks = self._split_blocks(normalized)
+        blocks = self._split_blocks(
+            normalized
+        )
 
-        expanded = self._expand_embedded_headers(blocks)
+        expanded = self._expand_embedded_headers(
+            blocks
+        )
 
-        detected = self._detect_boundaries(expanded)
+        detected = self._detect_boundaries(
+            expanded
+        )
 
-        sections = self._build_sections(expanded)
+        sections = self._build_sections(
+            expanded
+        )
 
         print()
         print(
-            f"  Bloques originales: {len(blocks)}"
+            f"  Bloques originales: "
+            f"{len(blocks)}"
         )
 
         print(
-            f"  Bloques después de expansión: {len(expanded)}"
+            f"  Bloques después de expansión: "
+            f"{len(expanded)}"
         )
 
         print()
@@ -442,8 +449,6 @@ class CVSectionSplitter:
             )
 
         print()
-        print("  Contenido por sección:")
-        print()
 
         for key in _EMPTY_SECTIONS:
             result = sections[key]
@@ -463,10 +468,12 @@ class CVSectionSplitter:
 
             lines = result.text.splitlines()
 
-            for line in lines[:10]:
-                print(f"  {line}")
+            for line in lines[:12]:
+                print(
+                    f"  {line}"
+                )
 
-            if len(lines) > 10:
+            if len(lines) > 12:
                 print("  ...")
 
             print()
@@ -481,20 +488,49 @@ class CVSectionSplitter:
         self,
         text: str,
     ) -> str:
-        """
-        Normaliza saltos de línea y espacios sin destruir estructura.
-        """
-
         if not text:
             return ""
 
-        text = text.replace("\r\n", "\n")
-        text = text.replace("\r", "\n")
-        text = text.replace("\t", " ")
+        text = text.replace(
+            "\r\n",
+            "\n",
+        )
+
+        text = text.replace(
+            "\r",
+            "\n",
+        )
+
+        text = text.replace(
+            "\t",
+            " ",
+        )
+
+        # Eliminar caracteres de control.
+        text = "".join(
+            char
+            for char in text
+            if char == "\n"
+            or not unicodedata.category(
+                char
+            ).startswith("Cc")
+        )
 
         text = re.sub(
             r"[ ]{2,}",
             " ",
+            text,
+        )
+
+        text = re.sub(
+            r"\n[ ]+",
+            "\n",
+            text,
+        )
+
+        text = re.sub(
+            r"[ ]+\n",
+            "\n",
             text,
         )
 
@@ -506,21 +542,16 @@ class CVSectionSplitter:
 
         return text.strip()
 
-    # ========================================================================
-    # BLOCKS
-    # ========================================================================
-
     def _split_blocks(
         self,
         text: str,
     ) -> list[str]:
-        """
-        Divide el documento en bloques usando fronteras explícitas.
-        """
-
         return [
             block.strip()
-            for block in text.split("\n\n")
+            for block in re.split(
+                r"\n\s*\n",
+                text,
+            )
             if block.strip()
         ]
 
@@ -532,65 +563,31 @@ class CVSectionSplitter:
     def _normalize_for_matching(
         text: str,
     ) -> str:
-        """
-        Normaliza acentos para comparación semántica.
-        """
-
-        replacements = str.maketrans(
-            {
-                "á": "a",
-                "é": "e",
-                "í": "i",
-                "ó": "o",
-                "ú": "u",
-                "ü": "u",
-                "ñ": "n",
-                "Á": "A",
-                "É": "E",
-                "Í": "I",
-                "Ó": "O",
-                "Ú": "U",
-                "Ü": "U",
-                "Ñ": "N",
-                "à": "a",
-                "è": "e",
-                "ì": "i",
-                "ò": "o",
-                "ù": "u",
-                "À": "A",
-                "È": "E",
-                "Ì": "I",
-                "Ò": "O",
-                "Ù": "U",
-                "ä": "a",
-                "ë": "e",
-                "ï": "i",
-                "ö": "o",
-                "Ä": "A",
-                "Ë": "E",
-                "Ï": "I",
-                "Ö": "O",
-            }
+        normalized = unicodedata.normalize(
+            "NFD",
+            text,
         )
 
-        return text.translate(replacements)
+        return "".join(
+            char
+            for char in normalized
+            if unicodedata.category(
+                char
+            ) != "Mn"
+        )
 
     @staticmethod
     def _semantic_key(
         text: str,
     ) -> str:
-        """
-        Produce una clave estable para deduplicación.
-        """
-
         return "".join(
-            character.casefold()
-            for character in text
-            if character.isalnum()
+            char.casefold()
+            for char in text
+            if char.isalnum()
         )
 
     # ========================================================================
-    # PATTERN COMPILATION
+    # PATTERNS
     # ========================================================================
 
     def _compile_patterns(
@@ -599,36 +596,38 @@ class CVSectionSplitter:
         SectionKey,
         list[re.Pattern[str]],
     ]:
-        """
-        Compila encabezados completos.
-        """
-
         compiled: dict[
             SectionKey,
             list[re.Pattern[str]],
         ] = {}
 
-        for section, headers in _SECTION_HEADERS.items():
-            patterns: list[re.Pattern[str]] = []
+        for section, headers in (
+            _SECTION_HEADERS.items()
+        ):
+            patterns: list[
+                re.Pattern[str]
+            ] = []
 
             for header in headers:
-                normalized_header = (
-                    self._normalize_for_matching(header)
+                normalized = (
+                    self._normalize_for_matching(
+                        header
+                    )
                 )
 
                 escaped = r"\s+".join(
                     re.escape(word)
-                    for word in normalized_header.split()
+                    for word in normalized.split()
                 )
 
-                pattern = re.compile(
-                    rf"^[^A-Za-z0-9]*"
-                    rf"{escaped}"
-                    rf"[^A-Za-z0-9]*$",
-                    re.IGNORECASE,
+                patterns.append(
+                    re.compile(
+                        rf"^[^A-Za-z0-9À-ÖØ-öø-ÿ]*"
+                        rf"{escaped}"
+                        rf"[^A-Za-z0-9À-ÖØ-öø-ÿ]*$",
+                        re.IGNORECASE,
+                    )
                 )
-
-                patterns.append(pattern)
 
             compiled[section] = patterns
 
@@ -643,10 +642,6 @@ class CVSectionSplitter:
             re.Pattern[str],
         ]
     ]:
-        """
-        Compila encabezados que pueden aparecer pegados al contenido.
-        """
-
         result: list[
             tuple[
                 str,
@@ -655,22 +650,29 @@ class CVSectionSplitter:
             ]
         ] = []
 
-        for section, headers in _SECTION_HEADERS.items():
+        for section, headers in (
+            _SECTION_HEADERS.items()
+        ):
             for header in headers:
-                normalized_header = (
-                    self._normalize_for_matching(header)
+                normalized = (
+                    self._normalize_for_matching(
+                        header
+                    )
                 )
 
-                pattern = re.compile(
-                    rf"^{re.escape(normalized_header)}",
-                    re.IGNORECASE,
+                escaped_words = r"\s+".join(
+                    re.escape(word)
+                    for word in normalized.split()
                 )
 
                 result.append(
                     (
                         header,
                         section,
-                        pattern,
+                        re.compile(
+                            rf"^{escaped_words}",
+                            re.IGNORECASE,
+                        ),
                     )
                 )
 
@@ -689,46 +691,35 @@ class CVSectionSplitter:
         self,
         blocks: list[str],
     ) -> list[str]:
-        """
-        Convierte:
-
-            EDUCATIONIndustrial Engineering...
-
-        en:
-
-            EDUCATION
-            Industrial Engineering...
-        """
-
         expanded: list[str] = []
 
         for block in blocks:
-            pieces = self._split_leading_embedded_header(
-                block
+            expanded.extend(
+                self._split_leading_embedded_header(
+                    block
+                )
             )
 
-            expanded.extend(pieces)
-
         return [
-            piece.strip()
-            for piece in expanded
-            if piece.strip()
+            item.strip()
+            for item in expanded
+            if item.strip()
         ]
 
     def _split_leading_embedded_header(
         self,
         block: str,
     ) -> list[str]:
-        """
-        Detecta un encabezado pegado al comienzo de un bloque.
-        """
-
         working = block.strip()
 
         if not working:
             return []
 
-        prefix_match = _DECORATIVE_PREFIX_RE.match(working)
+        prefix_match = (
+            _DECORATIVE_PREFIX_RE.match(
+                working
+            )
+        )
 
         content_start = (
             prefix_match.end()
@@ -736,10 +727,14 @@ class CVSectionSplitter:
             else 0
         )
 
-        candidate = working[content_start:]
+        candidate = working[
+            content_start:
+        ]
 
         normalized_candidate = (
-            self._normalize_for_matching(candidate)
+            self._normalize_for_matching(
+                candidate
+            )
         )
 
         for (
@@ -758,7 +753,7 @@ class CVSectionSplitter:
             header_length = len(header)
 
             if len(candidate) <= header_length:
-                continue
+                return [working]
 
             actual_header = candidate[
                 :header_length
@@ -769,7 +764,7 @@ class CVSectionSplitter:
             ].strip()
 
             if not remaining:
-                continue
+                return [working]
 
             return [
                 actual_header,
@@ -779,36 +774,44 @@ class CVSectionSplitter:
         return [working]
 
     # ========================================================================
-    # HEADER MATCHING
+    # HEADER DETECTION
     # ========================================================================
 
     def _match_header(
         self,
         block: str,
     ) -> SectionKey | None:
-        """
-        Detecta un encabezado completo.
-        """
-
         first_line = block.split(
             "\n",
             1,
         )[0].strip()
 
         normalized_line = (
-            self._normalize_for_matching(first_line)
+            self._normalize_for_matching(
+                first_line
+            )
         )
 
         best_section: SectionKey | None = None
         best_length = 0
 
-        for section, patterns in self._patterns.items():
-            for index, pattern in enumerate(patterns):
-                if not pattern.fullmatch(normalized_line):
+        for (
+            section,
+            patterns,
+        ) in self._patterns.items():
+
+            for index, pattern in enumerate(
+                patterns
+            ):
+                if not pattern.fullmatch(
+                    normalized_line
+                ):
                     continue
 
                 header_length = len(
-                    _SECTION_HEADERS[section][index]
+                    _SECTION_HEADERS[
+                        section
+                    ][index]
                 )
 
                 if header_length > best_length:
@@ -817,64 +820,73 @@ class CVSectionSplitter:
 
         return best_section
 
-    # ========================================================================
-    # CONTEXTUAL HEADER RULES
-    # ========================================================================
-
     def _is_ignored_contextual_header(
         self,
         section: SectionKey,
         block_index: int,
         blocks: list[str],
     ) -> bool:
-        """
-        Evita falsos encabezados creados por elementos internos del CV.
-
-        Caso principal:
-
-            Experience
-            ...
-            Technologies
-            : Flutter · Python · ...
-
-        "Technologies" pertenece a la experiencia y no debe
-        abrir una nueva sección Skills.
-        """
-
         normalized = (
             self._normalize_for_matching(
                 blocks[block_index]
-            ).casefold()
+            )
+            .casefold()
         )
 
-        if normalized != "technologies":
-            return False
+        # Technologies dentro de Experience
+        # NO debe abrir Skills.
+        if normalized in ("technologies", "tecnologias"):
+            previous = (
+                self._detect_previous_real_sections(
+                    block_index,
+                    blocks,
+                )
+            )
 
-        previous_sections = self._detect_previous_real_sections(
-            block_index,
-            blocks,
-        )
+            return (
+                "experience"
+                in previous
+            )
 
-        return "experience" in previous_sections
+        # Language aislado dentro de Experience
+        # puede ser una etiqueta interna.
+        if normalized == "language":
+            previous = (
+                self._detect_previous_real_sections(
+                    block_index,
+                    blocks,
+                )
+            )
+
+            if (
+                "experience" in previous
+                and "languages"
+                not in previous
+            ):
+                return True
+
+        return False
 
     def _detect_previous_real_sections(
         self,
         block_index: int,
         blocks: list[str],
     ) -> set[SectionKey]:
-        """
-        Detecta las secciones explícitas anteriores al bloque actual.
+        sections: set[
+            SectionKey
+        ] = set()
 
-        Se utiliza solamente para decisiones contextuales.
-        """
-
-        sections: set[SectionKey] = set()
-
-        for index in range(block_index):
-            section = self._match_header(blocks[index])
+        for index in range(
+            block_index
+        ):
+            section = self._match_header(
+                blocks[index]
+            )
 
             if section is not None:
-                sections.add(section)
+                sections.add(
+                    section
+                )
 
         return sections
 
@@ -886,15 +898,10 @@ class CVSectionSplitter:
         self,
         block: str,
     ) -> SectionKey | None:
-        """
-        Detección estructural conservadora.
-
-        Recupera EXPERIENCE cuando existen simultáneamente
-        rol profesional y fecha.
-        """
-
         normalized = (
-            self._normalize_for_matching(block)
+            self._normalize_for_matching(
+                block
+            )
         )
 
         role_pattern = re.compile(
@@ -920,8 +927,10 @@ class CVSectionSplitter:
             r"especialista|"
             r"lead|"
             r"lider|"
-            r"líder|"
-            r"founder"
+            r"founder|"
+            r"full stack|"
+            r"frontend|"
+            r"backend"
             r")\b",
             re.IGNORECASE,
         )
@@ -936,35 +945,33 @@ class CVSectionSplitter:
         )
 
         if (
-            role_pattern.search(normalized)
-            and date_pattern.search(normalized)
+            role_pattern.search(
+                normalized
+            )
+            and date_pattern.search(
+                normalized
+            )
         ):
             return "experience"
 
         return None
 
-    # ========================================================================
-    # BOUNDARIES
-    # ========================================================================
-
     def _detect_boundaries(
         self,
         blocks: list[str],
-    ) -> list[dict[str, Any]]:
-        """
-        Detecta todos los límites de sección.
+    ) -> list[
+        dict[str, Any]
+    ]:
+        found: list[
+            dict[str, Any]
+        ] = []
 
-        Las detecciones son contextuales para evitar:
-
-        - Technologies dentro de Experience.
-        - Headers duplicados que realmente representan
-          una cabecera/contacto.
-        """
-
-        found: list[dict[str, Any]] = []
-
-        for index, block in enumerate(blocks):
-            section = self._match_header(block)
+        for index, block in enumerate(
+            blocks
+        ):
+            section = self._match_header(
+                block
+            )
 
             if section is not None:
                 if self._is_ignored_contextual_header(
@@ -986,8 +993,10 @@ class CVSectionSplitter:
 
                 continue
 
-            structural = self._detect_structural_boundary(
-                block
+            structural = (
+                self._detect_structural_boundary(
+                    block
+                )
             )
 
             if structural is not None:
@@ -1004,25 +1013,13 @@ class CVSectionSplitter:
         return found
 
     # ========================================================================
-    # BUILD SECTIONS
+    # BUILD
     # ========================================================================
 
     def _build_sections(
         self,
         blocks: list[str],
     ) -> SectionMap:
-        """
-        Construye el mapa final de secciones.
-
-        Maneja especialmente:
-
-        - Summary duplicado.
-        - Contacto posterior al segundo Summary.
-        - Cabecera personal contaminando Education.
-        - LIA Ecosystem como Projects.
-        - Technologies interno de Experience.
-        """
-
         accumulator: dict[
             SectionKey,
             list[str],
@@ -1041,10 +1038,22 @@ class CVSectionSplitter:
             DetectionMethod,
         ] = {}
 
-        detected = self._detect_boundaries(blocks)
+        detected = (
+            self._detect_boundaries(
+                blocks
+            )
+        )
 
         if not detected:
-            accumulator["personal_info"] = list(blocks)
+            accumulator[
+                "personal_info"
+            ] = list(blocks)
+
+            self._recover_personal_info(
+                accumulator,
+                confidences,
+                detections,
+            )
 
             return self._join_sections(
                 accumulator,
@@ -1052,97 +1061,112 @@ class CVSectionSplitter:
                 detections,
             )
 
-        first_index = detected[0]["index"]
+        first_index = detected[
+            0
+        ]["index"]
 
-        accumulator["personal_info"] = blocks[:first_index]
+        accumulator[
+            "personal_info"
+        ] = blocks[
+            :first_index
+        ]
 
-        for index, boundary in enumerate(detected):
-            section = boundary["section"]
-            start = boundary["index"]
+        for index, boundary in enumerate(
+            detected
+        ):
+            section = boundary[
+                "section"
+            ]
 
-            if index + 1 < len(detected):
-                end = detected[index + 1]["index"]
+            start = boundary[
+                "index"
+            ]
+
+            if (
+                index + 1
+                < len(detected)
+            ):
+                end = detected[
+                    index + 1
+                ]["index"]
             else:
                 end = len(blocks)
 
-            content = blocks[start + 1:end]
+            content = blocks[
+                start + 1:end
+            ]
 
-            # ---------------------------------------------------------------
-            # SUMMARY DUPLICADO
-            # ---------------------------------------------------------------
-
-            if section == "summary" and self._is_duplicate_summary(
-                detected,
-                index,
+            if (
+                section == "summary"
+                and self._is_duplicate_summary(
+                    detected,
+                    index,
+                )
             ):
                 self._split_duplicate_summary_region(
-                    content=content,
-                    accumulator=accumulator,
+                    content,
+                    accumulator,
                 )
-
             else:
-                accumulator[section].extend(content)
+                accumulator[
+                    section
+                ].extend(
+                    content
+                )
 
-            confidence = float(boundary["confidence"])
+            confidence = float(
+                boundary[
+                    "confidence"
+                ]
+            )
 
-            if confidence >= confidences.get(section, 0.0):
-                confidences[section] = confidence
-                detections[section] = boundary["detection"]
+            if confidence >= confidences.get(
+                section,
+                0.0,
+            ):
+                confidences[
+                    section
+                ] = confidence
 
-        # --------------------------------------------------------------------
-        # Deduplication
-        # --------------------------------------------------------------------
+                detections[
+                    section
+                ] = boundary[
+                    "detection"
+                ]
 
+        # Deduplicar antes de recuperar.
         for section in accumulator:
-            accumulator[section] = (
+            accumulator[
+                section
+            ] = (
                 self._deduplicate_section_blocks(
-                    accumulator[section]
+                    accumulator[
+                        section
+                    ]
                 )
             )
 
-        # --------------------------------------------------------------------
-        # Section contamination recovery
-        # --------------------------------------------------------------------
-        #
-        # Important for DOCX layouts where visual columns are flattened
-        # sequentially. In the current CV, the education section can be
-        # followed by the visual personal header:
-        #
-        #   MIGUEL
-        #   TOVAR AMARAL
-        #   Full Stack Developer
-        #   ...
-        #   linkedin...
-        #   github...
-        #
-        # That region is not education and must be removed before the
-        # EducationBuilder receives the text.
-        # --------------------------------------------------------------------
-
+        # Educación puede contener una cabecera personal
+        # por pérdida del layout del DOCX.
         self._remove_personal_profile_from_education(
-            accumulator=accumulator,
-            confidences=confidences,
-            detections=detections,
+            accumulator,
+            confidences,
+            detections,
         )
 
-        # --------------------------------------------------------------------
-        # Personal information recovery
-        # --------------------------------------------------------------------
-
+        # Recuperación global.
         self._recover_personal_info(
-            accumulator=accumulator,
-            confidences=confidences,
-            detections=detections,
+            accumulator,
+            confidences,
+            detections,
         )
 
-        # --------------------------------------------------------------------
-        # Language cleanup
-        # --------------------------------------------------------------------
-
-        accumulator["languages"] = (
-            self._clean_languages_blocks(
-                accumulator["languages"]
-            )
+        accumulator[
+            "languages"
+        ] = self._clean_languages_blocks(
+            accumulator[
+                "languages"
+            ]
         )
 
         return self._join_sections(
@@ -1152,201 +1176,129 @@ class CVSectionSplitter:
         )
 
     # ========================================================================
-    # SECTION CONTAMINATION RECOVERY
+    # EDUCATION CONTAMINATION
     # ========================================================================
 
     def _remove_personal_profile_from_education(
         self,
-        accumulator: dict[SectionKey, list[str]],
-        confidences: dict[SectionKey, float],
-        detections: dict[SectionKey, DetectionMethod],
+        accumulator: dict[
+            SectionKey,
+            list[str],
+        ],
+        confidences: dict[
+            SectionKey,
+            float,
+        ],
+        detections: dict[
+            SectionKey,
+            DetectionMethod,
+        ],
     ) -> None:
-        """
-        Evita que una cabecera personal/profesional termine dentro
-        de EDUCATION debido a la pérdida de estructura visual del DOCX.
-
-        Ejemplo:
-
-            Ingeniería Industrial y de Sistemas
-            Universidad del Valle de México
-            Google Data Analytics (Coursera)
-            continua en IA,
-            Flutter y Arquitectura de Software
-            MIGUEL
-            TOVAR AMARAL
-            Full Stack Developer
-            ...
-            linkedin
-            github
-            ...
-
-        La recuperación requiere evidencia semántica suficiente:
-
-        - nombre;
-        - título profesional;
-        - múltiples señales de contacto.
-
-        No depende del nombre concreto del candidato.
-        """
-
-        education_blocks = accumulator.get(
-            "education",
-            [],
+        education_blocks = (
+            accumulator.get(
+                "education",
+                [],
+            )
         )
 
         if not education_blocks:
             return
 
-        contact_start = self._find_profile_contamination_start(
-            education_blocks
+        start = (
+            self._find_profile_contamination_start(
+                education_blocks
+            )
         )
 
-        if contact_start is None:
+        if start is None:
             return
 
         contaminated = education_blocks[
-            contact_start:
+            start:
         ]
 
-        if not contaminated:
-            return
-
-        recovered = self._recover_fragmented_contact(
-            contaminated
+        recovered = (
+            self._recover_fragmented_contact(
+                contaminated
+            )
         )
 
-        # No modificar EDUCATION si no podemos reconstruir una cabecera
-        # personal suficientemente confiable.
         if recovered is None:
             return
 
-        personal_text, _remaining_blocks = recovered
-
-        if not personal_text:
-            return
-
-        accumulator["education"] = (
-            education_blocks[:contact_start]
+        personal_text, remaining = (
+            recovered
         )
 
-        accumulator["personal_info"].append(
+        if not personal_text.strip():
+            return
+
+        accumulator[
+            "education"
+        ] = (
+            education_blocks[:start]
+            + remaining
+        )
+
+        accumulator[
+            "personal_info"
+        ].append(
             personal_text
         )
 
-        confidences["personal_info"] = max(
-            confidences.get("personal_info", 0.0),
+        confidences[
+            "personal_info"
+        ] = max(
+            confidences.get(
+                "personal_info",
+                0.0,
+            ),
             0.95,
         )
 
-        detections["personal_info"] = "recovery"
+        detections[
+            "personal_info"
+        ] = "recovery"
 
     def _find_profile_contamination_start(
         self,
         blocks: list[str],
     ) -> int | None:
-        """
-        Encuentra el comienzo de una cabecera personal/profesional
-        contaminando una sección estructurada.
-
-        Requiere:
-
-        1. una línea que parezca nombre;
-        2. un título profesional cercano;
-        3. múltiples señales de contacto posteriormente.
-
-        Esto evita cortar educación legítima por encontrar una palabra
-        como "Developer" o "Engineer".
-        """
-
         if not blocks:
             return None
 
-        # --------------------------------------------------------------------
-        # Caso 1:
-        #
-        # Nombre + título profesional + señales de contacto
-        # --------------------------------------------------------------------
-
-        for start_index, candidate in enumerate(blocks):
-            if not self._looks_like_name_line(candidate):
-                continue
-
-            window_end = min(
-                len(blocks),
-                start_index + 25,
-            )
-
-            window = blocks[
-                start_index:window_end
-            ]
-
-            has_profile_title = any(
-                self._looks_like_profile_title(
-                    value
-                )
-                for value in window
-            )
-
-            if not has_profile_title:
-                continue
-
-            contact_signals = sum(
-                1
-                for value in window
-                if self._is_contact_fragment(value)
-            )
-
-            if contact_signals < 2:
-                continue
-
-            return start_index
-
-        # --------------------------------------------------------------------
-        # Caso 2:
-        #
-        # Nombre dividido en dos bloques:
-        #
-        # MIGUEL
-        # TOVAR AMARAL
-        # Full Stack Developer
-        # ...
-        # --------------------------------------------------------------------
-
-        for start_index in range(
-            len(blocks) - 1
+        for start_index, candidate in enumerate(
+            blocks
         ):
-            first = blocks[start_index].strip()
-            second = blocks[start_index + 1].strip()
-
-            if not self._looks_like_name_line(first):
+            if not self._looks_like_name_line(
+                candidate
+            ):
                 continue
-
-            if not self._looks_like_name_line(second):
-                continue
-
-            window_end = min(
-                len(blocks),
-                start_index + 25,
-            )
 
             window = blocks[
-                start_index:window_end
+                start_index:
+                min(
+                    len(blocks),
+                    start_index + 25,
+                )
             ]
 
-            has_profile_title = any(
+            has_title = any(
                 self._looks_like_profile_title(
                     value
                 )
                 for value in window
             )
 
-            if not has_profile_title:
+            if not has_title:
                 continue
 
             contact_signals = sum(
                 1
                 for value in window
-                if self._is_contact_fragment(value)
+                if self._is_contact_fragment(
+                    value
+                )
             )
 
             if contact_signals >= 2:
@@ -1360,34 +1312,27 @@ class CVSectionSplitter:
 
     def _is_duplicate_summary(
         self,
-        detected: list[dict[str, Any]],
+        detected: list[
+            dict[str, Any]
+        ],
         boundary_index: int,
     ) -> bool:
-        """
-        Determina si el boundary actual es un Summary duplicado.
+        current = detected[
+            boundary_index
+        ]
 
-        Ejemplo:
-
-            PROFESSIONAL SUMMARY
-            ...
-            PROFESSIONAL SUMMARY
-            ...
-
-        El segundo Summary puede ser en realidad el punto donde
-        empieza la cabecera visual/contacto del CV.
-        """
-
-        current = detected[boundary_index]
-
-        if current["section"] != "summary":
+        if current[
+            "section"
+        ] != "summary":
             return False
 
-        previous_same_summary = any(
-            item["section"] == "summary"
-            for item in detected[:boundary_index]
+        return any(
+            item["section"]
+            == "summary"
+            for item in detected[
+                :boundary_index
+            ]
         )
-
-        return previous_same_summary
 
     def _split_duplicate_summary_region(
         self,
@@ -1397,162 +1342,84 @@ class CVSectionSplitter:
             list[str],
         ],
     ) -> None:
-        """
-        Separa el contenido posterior a un Summary duplicado.
-
-        El CV de prueba produce:
-
-            MIGUEL
-            TOVAR AMARAL
-            Full Stack Developer
-            Building AI-powered products...
-            linkedin...
-            ...
-
-        Esta región pertenece a personal_info.
-        """
-
         if not content:
             return
 
-        contact_start = self._find_contact_block_start(
-            content
+        start = (
+            self._find_contact_block_start(
+                content
+            )
         )
 
-        if contact_start is None:
-            accumulator["summary"].extend(content)
+        if start is None:
+            accumulator[
+                "summary"
+            ].extend(
+                content
+            )
             return
 
-        summary_part = content[:contact_start]
-        contact_part = content[contact_start:]
+        summary_part = content[
+            :start
+        ]
+
+        contact_part = content[
+            start:
+        ]
 
         if summary_part:
-            accumulator["summary"].extend(summary_part)
+            accumulator[
+                "summary"
+            ].extend(
+                summary_part
+            )
 
-        if not contact_part:
-            return
-
-        recovered = self._recover_fragmented_contact(
-            contact_part
+        recovered = (
+            self._recover_fragmented_contact(
+                contact_part
+            )
         )
 
-        if recovered is not None:
-            personal_text, _remaining_blocks = recovered
-
-            if personal_text:
-                accumulator["personal_info"].append(
-                    personal_text
-                )
-
-            # Los bloques visuales restantes, como FRONTEND/BACKEND,
-            # no se clasifican automáticamente como personal_info.
-            return
-
-        contact_end = self._find_contact_region_end(
-            contact_part
-        )
-
-        if contact_end is None:
-            accumulator["personal_info"].extend(
+        if recovered is None:
+            accumulator[
+                "personal_info"
+            ].extend(
                 contact_part
             )
             return
 
-        accumulator["personal_info"].extend(
-            contact_part[:contact_end]
+        personal_text, remaining = (
+            recovered
         )
 
-        if contact_part[contact_end:]:
-            accumulator["summary"].extend(
-                contact_part[contact_end:]
+        if personal_text:
+            accumulator[
+                "personal_info"
+            ].append(
+                personal_text
             )
 
-    def _find_contact_region_end(
-        self,
-        blocks: list[str],
-    ) -> int | None:
-        """
-        Encuentra el final de una región de contacto fragmentada.
-
-        La región termina cuando aparecen elementos visuales que ya no son
-        datos personales, por ejemplo:
-
-            GitHub Portfolio
-            FRONTEND
-            BACKEND
-            Building modern, responsive
-            ...
-
-        El resultado es el índice exclusivo del último bloque de contacto.
-        """
-
-        if not blocks:
-            return None
-
-        last_contact = -1
-
-        for index, block in enumerate(blocks):
-            value = block.strip()
-
-            if self._is_contact_fragment(value):
-                last_contact = index
-                continue
-
-            if self._looks_like_contact_continuation(value):
-                if last_contact >= 0:
-                    last_contact = index
-                continue
-
-            if last_contact < 0:
-                continue
-
-            normalized = (
-                self._normalize_for_matching(value)
-                .casefold()
+        if remaining:
+            accumulator[
+                "summary"
+            ].extend(
+                remaining
             )
-
-            if normalized in {
-                "frontend",
-                "backend",
-                "front end",
-                "back end",
-            }:
-                break
-
-            break
-
-        if last_contact < 0:
-            return None
-
-        return last_contact + 1
 
     def _find_contact_block_start(
         self,
         blocks: list[str],
     ) -> int | None:
-        """
-        Encuentra el primer bloque que inicia la cabecera personal.
-
-        Prioridad:
-
-        1. Dos líneas consecutivas con apariencia de nombre.
-        2. Una línea de nombre seguida por varias señales de contacto.
-        3. Un título profesional corto con un nombre inmediatamente
-           anterior.
-
-        Los párrafos largos nunca se consideran cabecera por contener
-        palabras como "Founder", "Developer", etc.
-        """
-
         if not blocks:
             return None
 
-        # --------------------------------------------------------------------
-        # 1. Nombre + apellido + señales de contacto
-        # --------------------------------------------------------------------
-
-        for index in range(len(blocks) - 1):
-            if not self._looks_like_name_line(blocks[index]):
+        # Nombre completo o nombre partido.
+        for index in range(
+            len(blocks) - 1
+        ):
+            if not self._looks_like_name_line(
+                blocks[index]
+            ):
                 continue
 
             if not self._looks_like_name_line(
@@ -1561,98 +1428,56 @@ class CVSectionSplitter:
                 continue
 
             window = blocks[
-                index:min(len(blocks), index + 20)
+                index:
+                min(
+                    len(blocks),
+                    index + 20,
+                )
             ]
 
             signal_count = sum(
                 1
                 for candidate in window
-                if self._is_contact_fragment(candidate)
+                if self._is_contact_fragment(
+                    candidate
+                )
             )
 
             if signal_count >= 2:
                 return index
 
-        # --------------------------------------------------------------------
-        # 2. Una sola línea de nombre + señales
-        # --------------------------------------------------------------------
-
-        for index, block in enumerate(blocks):
-            if not self._looks_like_name_line(block):
+        # Nombre en un único bloque.
+        for index, block in enumerate(
+            blocks
+        ):
+            if not self._looks_like_name_line(
+                block
+            ):
                 continue
 
             window = blocks[
-                index:min(len(blocks), index + 20)
+                index:
+                min(
+                    len(blocks),
+                    index + 20,
+                )
             ]
 
             signal_count = sum(
                 1
                 for candidate in window
-                if self._is_contact_fragment(candidate)
+                if self._is_contact_fragment(
+                    candidate
+                )
             )
 
             if signal_count >= 2:
                 return index
 
-        # --------------------------------------------------------------------
-        # 3. Título profesional corto con nombre anterior
-        # --------------------------------------------------------------------
-
-        for index, block in enumerate(blocks):
-            if not self._looks_like_contact_header_block(block):
-                continue
-
-            if self._looks_like_profile_title(block):
-                name_start = self._find_name_before(
-                    lines=blocks,
-                    title_index=index,
-                )
-
-                if name_start is not None:
-                    return name_start
-
         return None
 
-    def _looks_like_contact_header_block(
-        self,
-        block: str,
-    ) -> bool:
-        """
-        Determina si un bloque puede iniciar la cabecera personal.
-
-        Un resumen profesional puede contener palabras como "Founder",
-        "Developer" o "Engineer". Por eso los bloques largos de prosa
-        nunca se consideran cabecera únicamente por contener un título.
-        """
-
-        value = block.strip()
-
-        if not value:
-            return False
-
-        if len(value) > 100:
-            return False
-
-        if self._looks_like_profile_title(value):
-            if (
-                len(value.split()) <= 8
-                and not re.search(
-                    r"[.!?]",
-                    value,
-                )
-            ):
-                return True
-
-        if self._looks_like_name_line(value):
-            return True
-
-        if self._is_contact_fragment(value):
-            return True
-
-        return False
-
     # ========================================================================
-    # PERSONAL INFORMATION RECOVERY
+    # PERSONAL INFO RECOVERY
     # ========================================================================
 
     def _recover_personal_info(
@@ -1671,13 +1496,52 @@ class CVSectionSplitter:
         ],
     ) -> None:
         """
-        Recupera información personal desplazada dentro de summary.
+        Recupera contacto desplazado desde cualquier sección.
 
-        Si ya fue recuperada durante el tratamiento de Summary duplicado,
-        no vuelve a moverla.
+        Esto es especialmente importante para DOCX con columnas,
+        textboxes o elementos gráficos.
+
+        Orden:
+
+        1. Summary.
+        2. Experience.
+        3. Education.
+        4. Skills.
+        5. Languages.
+        6. Certifications.
+        7. Projects.
+        8. Fallback de bloques individuales.
         """
 
-        if accumulator["personal_info"]:
+        search_sections: tuple[
+            SectionKey,
+            ...
+        ] = (
+            "summary",
+            "experience",
+            "education",
+            "skills",
+            "languages",
+            "certifications",
+            "projects",
+        )
+
+        # ------------------------------------------------------------------
+        # Si ya tenemos contacto fuerte, no mover más contenido.
+        # ------------------------------------------------------------------
+
+        existing = "\n".join(
+            accumulator[
+                "personal_info"
+            ]
+        )
+
+        if (
+            existing
+            and self._region_has_enough_contact_signals(
+                existing.splitlines()
+            )
+        ):
             confidences.setdefault(
                 "personal_info",
                 0.95,
@@ -1688,44 +1552,117 @@ class CVSectionSplitter:
                 "recovery",
             )
 
-        blocks = accumulator["summary"]
-
-        if not blocks:
             return
 
-        recovered = self._recover_fragmented_contact(
-            blocks
-        )
+        # ------------------------------------------------------------------
+        # Intentar recuperar una cabecera completa.
+        # ------------------------------------------------------------------
 
-        if recovered is not None:
-            personal_text, remaining_blocks = recovered
+        for section_key in search_sections:
+            blocks = accumulator.get(
+                section_key,
+                [],
+            )
 
-            accumulator["personal_info"].append(
+            if not blocks:
+                continue
+
+            recovered = (
+                self._recover_fragmented_contact(
+                    blocks
+                )
+            )
+
+            if recovered is None:
+                continue
+
+            personal_text, remaining = (
+                recovered
+            )
+
+            if not personal_text.strip():
+                continue
+
+            accumulator[
+                "personal_info"
+            ].append(
                 personal_text
             )
 
-            accumulator["summary"] = remaining_blocks
+            accumulator[
+                section_key
+            ] = remaining
 
-            confidences["personal_info"] = 0.95
-            detections["personal_info"] = "recovery"
+            confidences[
+                "personal_info"
+            ] = 0.95
+
+            detections[
+                "personal_info"
+            ] = "recovery"
 
             return
 
-        for index, block in enumerate(blocks):
-            if not self._looks_like_personal_info(block):
-                continue
+        # ------------------------------------------------------------------
+        # Fallback: extraer únicamente bloques con contacto fuerte.
+        # ------------------------------------------------------------------
 
-            if not self._is_meaningful_contact_block(block):
-                continue
-
-            personal_block = blocks.pop(index)
-
-            accumulator["personal_info"].append(
-                personal_block
+        for section_key in search_sections:
+            blocks = accumulator.get(
+                section_key,
+                [],
             )
 
-            confidences["personal_info"] = 0.90
-            detections["personal_info"] = "recovery"
+            if not blocks:
+                continue
+
+            recovered_blocks: list[
+                str
+            ] = []
+
+            remaining_blocks: list[
+                str
+            ] = []
+
+            for block in blocks:
+                if (
+                    self._looks_like_personal_info(
+                        block
+                    )
+                    and self._is_meaningful_contact_block(
+                        block
+                    )
+                ):
+                    recovered_blocks.append(
+                        block
+                    )
+                else:
+                    remaining_blocks.append(
+                        block
+                    )
+
+            if not recovered_blocks:
+                continue
+
+            accumulator[
+                "personal_info"
+            ].append(
+                "\n".join(
+                    recovered_blocks
+                )
+            )
+
+            accumulator[
+                section_key
+            ] = remaining_blocks
+
+            confidences[
+                "personal_info"
+            ] = 0.90
+
+            detections[
+                "personal_info"
+            ] = "recovery"
 
             return
 
@@ -1736,21 +1673,36 @@ class CVSectionSplitter:
     def _recover_fragmented_contact(
         self,
         blocks: list[str],
-    ) -> tuple[str, list[str]] | None:
+    ) -> tuple[
+        str,
+        list[str],
+    ] | None:
         """
-        Reconstruye una cabecera personal fragmentada por la extracción DOCX.
+        Recupera una cabecera fragmentada.
 
-        Soporta dos escenarios:
+        Ejemplo:
 
-        1. Un bloque contiene múltiples líneas.
-        2. Cada elemento visual fue extraído como un bloque independiente.
+            MIGUEL
+            TOVAR AMARAL
+            Full Stack Developer
+            linkedin
+            github
+            +52...
+            email...
+
+        También soporta un único bloque multilinea.
         """
 
-        # --------------------------------------------------------------------
-        # Caso 1: un bloque multilinea
-        # --------------------------------------------------------------------
+        if not blocks:
+            return None
 
-        for block_index, block in enumerate(blocks):
+        # ------------------------------------------------------------------
+        # CASO 1: bloque multilinea.
+        # ------------------------------------------------------------------
+
+        for block_index, block in enumerate(
+            blocks
+        ):
             lines = [
                 line.strip()
                 for line in block.splitlines()
@@ -1762,30 +1714,47 @@ class CVSectionSplitter:
 
             signal_indexes = [
                 index
-                for index, line in enumerate(lines)
-                if self._is_contact_fragment(line)
+                for index, line in enumerate(
+                    lines
+                )
+                if self._is_contact_fragment(
+                    line
+                )
             ]
 
             if len(signal_indexes) < 2:
                 continue
 
-            first_signal = min(signal_indexes)
-            last_signal = max(signal_indexes)
-
-            start = self._find_contact_region_start(
-                lines=lines,
-                first_signal=first_signal,
+            first_signal = min(
+                signal_indexes
             )
 
-            end = last_signal + 1
+            last_signal = max(
+                signal_indexes
+            )
+
+            start = (
+                self._find_contact_region_start(
+                    lines,
+                    first_signal,
+                )
+            )
+
+            end = (
+                last_signal + 1
+            )
 
             while (
                 end < len(lines)
                 and end <= last_signal + 6
             ):
-                candidate = lines[end]
+                candidate = lines[
+                    end
+                ]
 
-                if self._is_contact_fragment(candidate):
+                if self._is_contact_fragment(
+                    candidate
+                ):
                     end += 1
                     continue
 
@@ -1797,7 +1766,9 @@ class CVSectionSplitter:
 
                 break
 
-            region = lines[start:end]
+            region = lines[
+                start:end
+            ]
 
             if not self._region_has_enough_contact_signals(
                 region
@@ -1816,40 +1787,40 @@ class CVSectionSplitter:
                 + lines[end:]
             )
 
-            remaining_text = "\n".join(
-                remaining_lines
-            ).strip()
+            remaining_text = (
+                "\n".join(
+                    remaining_lines
+                ).strip()
+            )
 
-            updated_blocks = list(blocks)
+            updated_blocks = list(
+                blocks
+            )
 
             if remaining_text:
-                updated_blocks[block_index] = (
-                    remaining_text
-                )
+                updated_blocks[
+                    block_index
+                ] = remaining_text
             else:
-                updated_blocks.pop(block_index)
+                updated_blocks.pop(
+                    block_index
+                )
 
             return (
                 personal_text,
                 updated_blocks,
             )
 
-        # --------------------------------------------------------------------
-        # Caso 2: bloques independientes
-        #
-        # MIGUEL
-        # TOVAR AMARAL
-        # Full Stack Developer
-        # ...
-        # linkedin
-        # ...
-        # github
-        # ...
-        # +52...
-        # --------------------------------------------------------------------
+        # ------------------------------------------------------------------
+        # CASO 2: bloques independientes.
+        # ------------------------------------------------------------------
 
-        for start_index, candidate in enumerate(blocks):
-            if not self._looks_like_name_line(candidate):
+        for start_index, candidate in enumerate(
+            blocks
+        ):
+            if not self._looks_like_name_line(
+                candidate
+            ):
                 continue
 
             window_end = min(
@@ -1858,13 +1829,18 @@ class CVSectionSplitter:
             )
 
             window = blocks[
-                start_index:window_end
+                start_index:
+                window_end
             ]
 
             signal_positions = [
                 relative_index
-                for relative_index, value in enumerate(window)
-                if self._is_contact_fragment(value)
+                for relative_index, value in enumerate(
+                    window
+                )
+                if self._is_contact_fragment(
+                    value
+                )
             ]
 
             if len(signal_positions) < 2:
@@ -1880,11 +1856,16 @@ class CVSectionSplitter:
                 + 1
             )
 
-            # Incluir fragmentos de URL/email.
+            # Incluir título profesional
+            # y fragmentos de URL.
             while end_index < window_end:
-                value = blocks[end_index]
+                value = blocks[
+                    end_index
+                ]
 
-                if self._is_contact_fragment(value):
+                if self._is_contact_fragment(
+                    value
+                ):
                     end_index += 1
                     continue
 
@@ -1894,9 +1875,9 @@ class CVSectionSplitter:
                     end_index += 1
                     continue
 
-                # El título profesional y un tagline corto pueden estar
-                # entre el nombre y las señales de contacto.
-                if end_index <= start_index + 4:
+                if end_index <= (
+                    start_index + 5
+                ):
                     if self._looks_like_profile_title(
                         value
                     ):
@@ -1906,7 +1887,8 @@ class CVSectionSplitter:
                 break
 
             region = blocks[
-                start_index:end_index
+                start_index:
+                end_index
             ]
 
             if not self._region_has_enough_contact_signals(
@@ -1940,10 +1922,6 @@ class CVSectionSplitter:
         lines: list[str],
         first_signal: int,
     ) -> int:
-        """
-        Busca hacia atrás el inicio del encabezado personal.
-        """
-
         if first_signal <= 0:
             return first_signal
 
@@ -1952,8 +1930,7 @@ class CVSectionSplitter:
             first_signal - 8,
         )
 
-        title_index: int | None = None
-
+        # Buscar título profesional.
         for index in range(
             first_signal - 1,
             search_start - 1,
@@ -1962,20 +1939,19 @@ class CVSectionSplitter:
             if self._looks_like_profile_title(
                 lines[index]
             ):
-                title_index = index
-                break
+                name_start = (
+                    self._find_name_before(
+                        lines,
+                        index,
+                    )
+                )
 
-        if title_index is not None:
-            name_start = self._find_name_before(
-                lines=lines,
-                title_index=title_index,
-            )
+                if name_start is not None:
+                    return name_start
 
-            if name_start is not None:
-                return name_start
+                return index
 
-            return title_index
-
+        # Buscar dos fragmentos de nombre.
         for index in range(
             first_signal - 2,
             search_start - 1,
@@ -1988,6 +1964,7 @@ class CVSectionSplitter:
                 self._looks_like_name_line(
                     lines[index]
                 )
+                and index + 1 < len(lines)
                 and self._looks_like_name_line(
                     lines[index + 1]
                 )
@@ -2001,63 +1978,56 @@ class CVSectionSplitter:
         lines: list[str],
         title_index: int,
     ) -> int | None:
-        """
-        Busca un nombre inmediatamente antes del título profesional.
-        """
-
         if title_index <= 0:
             return None
 
-        previous = title_index - 1
+        previous = (
+            title_index - 1
+        )
 
-        if self._looks_like_name_line(
+        if not self._looks_like_name_line(
             lines[previous]
         ):
-            if (
-                previous > 0
-                and self._looks_like_name_line(
-                    lines[previous - 1]
-                )
-            ):
-                return previous - 1
+            return None
 
-            return previous
+        if (
+            previous > 0
+            and self._looks_like_name_line(
+                lines[previous - 1]
+            )
+        ):
+            return previous - 1
 
-        return None
+        return previous
 
     # ========================================================================
-    # NAME / PROFILE DETECTION
+    # NAME DETECTION
     # ========================================================================
 
     def _looks_like_name_line(
         self,
         line: str,
     ) -> bool:
-        """
-        Detecta una línea que parece parte de un nombre humano.
-        """
-
         value = line.strip()
 
         if not value:
             return False
 
-        if len(value) > 40:
+        if len(value) > 45:
             return False
 
         if any(
-            character.isdigit()
-            for character in value
+            char.isdigit()
+            for char in value
         ):
             return False
 
         if any(
-            character in value
-            for character in (
+            char in value
+            for char in (
                 "@",
                 "/",
                 ":",
-                ".",
                 "+",
                 "·",
             )
@@ -2070,29 +2040,48 @@ class CVSectionSplitter:
             return False
 
         normalized = (
-            self._normalize_for_matching(value)
+            self._normalize_for_matching(
+                value
+            )
+            .casefold()
         )
 
+        # Evitar falsos nombres.
         excluded_markers = (
             "building",
             "designed",
             "experienced",
             "specializing",
+            "specialized",
             "powered",
             "services",
             "applications",
             "platform",
+            "focused",
+            "professional",
+            "profesional",
+            "developer",
+            "desarrollador",
+            "engineer",
+            "ingeniero",
+            "founder",
+            "fundador",
+            "product",
+            "producto",
+            "technology",
+            "tecnologia",
+            "tecnología",
         )
 
         if any(
-            marker in normalized.casefold()
+            marker in normalized
             for marker in excluded_markers
         ):
             return False
 
         return all(
             re.fullmatch(
-                r"[A-Za-zÀ-ÖØ-öø-ÿ'-]+",
+                r"[A-Za-zÀ-ÖØ-öø-ÿÑñ'’-]+",
                 word,
             )
             is not None
@@ -2103,13 +2092,15 @@ class CVSectionSplitter:
         self,
         line: str,
     ) -> bool:
-        """
-        Detecta títulos profesionales.
-        """
-
         normalized = (
-            self._normalize_for_matching(line)
+            self._normalize_for_matching(
+                line
+            )
+            .casefold()
         )
+
+        if not normalized:
+            return False
 
         return any(
             re.search(
@@ -2121,72 +2112,74 @@ class CVSectionSplitter:
         )
 
     # ========================================================================
-    # CONTACT DETECTION
+    # CONTACT
     # ========================================================================
 
     def _is_contact_fragment(
         self,
         line: str,
     ) -> bool:
-        """
-        Determina si una línea puede formar parte de información personal.
-
-        Esta función es una señal, no una decisión final.
-        """
-
         value = line.strip()
 
         if not value:
             return False
 
         normalized = (
-            self._normalize_for_matching(value)
+            self._normalize_for_matching(
+                value
+            )
+            .casefold()
         )
 
-        lower = normalized.casefold()
-
-        if _EMAIL_RE.search(value):
+        if _EMAIL_RE.search(
+            value
+        ):
             return True
 
-        if self._looks_like_phone(value):
+        if self._looks_like_phone(
+            value
+        ):
             return True
 
-        if _LINKEDIN_RE.search(value):
+        if _LINKEDIN_RE.search(
+            value
+        ):
             return True
 
-        if _GITHUB_RE.search(value):
+        if _GITHUB_RE.search(
+            value
+        ):
             return True
 
         if any(
-            marker in lower
+            marker in normalized
             for marker in _LOCATION_MARKERS
         ):
             return True
 
+        # Check for tech overload that overrides weak contact signals like "github"
+        tech_hits = sum(1 for m in _TECH_MARKERS if m in normalized)
+        if tech_hits >= 2:
+            return False
+
         if any(
-            marker in lower
+            marker in normalized
+            for marker in _CONTACT_MARKERS
+        ):
+            return True
+
+        # Artefactos típicos de extracción.
+        if any(
+            marker in normalized
             for marker in (
-                "@gmail",
-                "@hotmail",
-                "@outlook",
-                "@gmailcom",
-                "@hotmailcom",
-                "@outlookcom",
+                "gmail",
+                "hotmail",
+                "outlook",
             )
         ):
             return True
 
-        if any(
-            marker in lower
-            for marker in (
-                "linkedin",
-                "github",
-                "portfolio",
-            )
-        ):
-            return True
-
-        if lower in {
+        if normalized in {
             "in",
             "com",
             "comv",
@@ -2195,6 +2188,10 @@ class CVSectionSplitter:
             ".com",
             "gmailcom",
             "@gmailcom",
+            "hotmailcom",
+            "@hotmailcom",
+            "outlookcom",
+            "@outlookcom",
         }:
             return True
 
@@ -2204,10 +2201,6 @@ class CVSectionSplitter:
         self,
         text: str,
     ) -> bool:
-        """
-        Determina si el texto contiene un teléfono razonable.
-        """
-
         if not text:
             return False
 
@@ -2221,42 +2214,57 @@ class CVSectionSplitter:
             return False
 
         return bool(
-            _PHONE_RE.search(text)
+            _PHONE_RE.search(
+                text
+            )
         )
 
     def _region_has_enough_contact_signals(
         self,
         lines: list[str],
     ) -> bool:
-        """
-        Exige múltiples señales antes de extraer una región.
-        """
-
         if not lines:
             return False
+
+        joined = "\n".join(
+            lines
+        )
 
         strong = 0
         weak = 0
 
-        joined = "\n".join(lines)
-
-        if _EMAIL_RE.search(joined):
+        if _EMAIL_RE.search(
+            joined
+        ):
             strong += 2
 
-        if self._looks_like_phone(joined):
+        if self._looks_like_phone(
+            joined
+        ):
             strong += 2
 
-        if _LINKEDIN_RE.search(joined):
+        if _LINKEDIN_RE.search(
+            joined
+        ):
             strong += 1
 
-        if _GITHUB_RE.search(joined):
+        if _GITHUB_RE.search(
+            joined
+        ):
             strong += 1
 
         for line in lines:
             normalized = (
-                self._normalize_for_matching(line)
+                self._normalize_for_matching(
+                    line
+                )
                 .casefold()
             )
+
+            tech_hits = sum(1 for m in _TECH_MARKERS if m in normalized)
+            if tech_hits >= 2:
+                # Demasiadas tecnologías para ser información personal
+                return False
 
             if any(
                 marker in normalized
@@ -2273,23 +2281,16 @@ class CVSectionSplitter:
             if any(
                 marker in normalized
                 for marker in (
-                    "@gmail",
-                    "@hotmail",
-                    "@outlook",
-                    "@gmailcom",
-                    "@hotmailcom",
-                    "@outlookcom",
+                    "gmail",
+                    "hotmail",
+                    "outlook",
                 )
             ):
                 weak += 1
 
-            if any(
-                marker in normalized
-                for marker in _FRAGMENTED_PROFILE_MARKERS
+            if self._looks_like_phone(
+                line
             ):
-                weak += 1
-
-            if self._looks_like_phone(line):
                 weak += 2
 
         if strong >= 2:
@@ -2301,12 +2302,10 @@ class CVSectionSplitter:
         self,
         line: str,
     ) -> bool:
-        """
-        Detecta fragmentos de URL/email separados por DOCX.
-        """
-
         normalized = (
-            self._normalize_for_matching(line)
+            self._normalize_for_matching(
+                line
+            )
             .casefold()
         )
 
@@ -2327,87 +2326,100 @@ class CVSectionSplitter:
             return True
 
         if normalized.endswith(
-            ("com", "com/", "in/", "comv")
+            (
+                "com",
+                "com/",
+                "in/",
+                "comv",
+            )
         ):
             return True
 
         if normalized.startswith(
-            ("@", ".", "/", "-")
+            (
+                "@",
+                ".",
+                "/",
+                "-",
+            )
         ):
             return True
 
         return False
 
     # ========================================================================
-    # PERSONAL INFO BLOCK DETECTION
+    # PERSONAL INFO FALLBACK
     # ========================================================================
 
     def _looks_like_personal_info(
         self,
         block: str,
     ) -> bool:
-        """
-        Determina si un bloque completo parece información personal.
-        """
-
         if not block.strip():
             return False
 
         normalized = (
-            self._normalize_for_matching(block)
+            self._normalize_for_matching(
+                block
+            )
+            .casefold()
         )
 
-        lower = normalized.casefold()
+        score = 0
 
-        strong_signals = 0
+        if _EMAIL_RE.search(
+            block
+        ):
+            score += 2
 
-        if _EMAIL_RE.search(block):
-            strong_signals += 2
+        if self._looks_like_phone(
+            block
+        ):
+            score += 2
 
-        if self._looks_like_phone(block):
-            strong_signals += 2
+        if _LINKEDIN_RE.search(
+            block
+        ):
+            score += 1
 
-        if _LINKEDIN_RE.search(block):
-            strong_signals += 1
+        if _GITHUB_RE.search(
+            block
+        ):
+            score += 1
 
-        if _GITHUB_RE.search(block):
-            strong_signals += 1
+        tech_hits = sum(
+            1 for marker in _TECH_MARKERS if marker in normalized
+        )
+        if tech_hits >= 2:
+            return False
 
         marker_hits = sum(
             1
             for marker in _CONTACT_MARKERS
-            if marker in lower
+            if marker in normalized
         )
 
-        strong_signals += min(
+        score += min(
             marker_hits,
             2,
         )
 
-        if strong_signals >= 2:
+        if score >= 2:
             return True
 
-        has_phone = self._looks_like_phone(block)
-
-        has_profile_title = any(
-            re.search(
-                rf"\b{re.escape(marker)}\b",
-                normalized,
-                re.IGNORECASE,
+        return (
+            self._looks_like_phone(
+                block
             )
-            for marker in _PROFILE_TITLE_MARKERS
+            and self._looks_like_profile_title(
+                block
+            )
         )
-
-        return has_phone and has_profile_title
 
     def _is_meaningful_contact_block(
         self,
         block: str,
     ) -> bool:
-        """
-        Evita considerar contacto un bloque diminuto.
-        """
-
         lines = [
             line.strip()
             for line in block.splitlines()
@@ -2422,9 +2434,7 @@ class CVSectionSplitter:
 
             if value in {
                 "linkedin",
-                "linkedin comin/",
                 "github",
-                "github.",
                 "com",
                 "com/",
                 "in",
@@ -2436,16 +2446,24 @@ class CVSectionSplitter:
 
         signals = 0
 
-        if _EMAIL_RE.search(block):
+        if _EMAIL_RE.search(
+            block
+        ):
             signals += 1
 
-        if self._looks_like_phone(block):
+        if self._looks_like_phone(
+            block
+        ):
             signals += 1
 
-        if _LINKEDIN_RE.search(block):
+        if _LINKEDIN_RE.search(
+            block
+        ):
             signals += 1
 
-        if _GITHUB_RE.search(block):
+        if _GITHUB_RE.search(
+            block
+        ):
             signals += 1
 
         return signals >= 2
@@ -2458,10 +2476,6 @@ class CVSectionSplitter:
         self,
         blocks: list[str],
     ) -> list[str]:
-        """
-        Elimina artefactos mínimos y duplicados.
-        """
-
         if not blocks:
             return []
 
@@ -2474,7 +2488,12 @@ class CVSectionSplitter:
             if not value:
                 continue
 
-            semantic = self._semantic_key(value)
+            semantic = self._semantic_key(
+                value
+            )
+
+            if not semantic:
+                continue
 
             if (
                 len(semantic) == 1
@@ -2485,9 +2504,13 @@ class CVSectionSplitter:
             if semantic in seen:
                 continue
 
-            seen.add(semantic)
+            seen.add(
+                semantic
+            )
 
-            cleaned.append(value)
+            cleaned.append(
+                value
+            )
 
         return cleaned
 
@@ -2499,15 +2522,18 @@ class CVSectionSplitter:
         self,
         blocks: list[str],
     ) -> list[str]:
-        """
-        Deduplica preservando el orden.
-        """
-
         result: list[str] = []
         seen: set[str] = set()
 
         for block in blocks:
-            key = self._semantic_key(block)
+            value = block.strip()
+
+            if not value:
+                continue
+
+            key = self._semantic_key(
+                value
+            )
 
             if not key:
                 continue
@@ -2515,13 +2541,18 @@ class CVSectionSplitter:
             if key in seen:
                 continue
 
-            seen.add(key)
-            result.append(block)
+            seen.add(
+                key
+            )
+
+            result.append(
+                value
+            )
 
         return result
 
     # ========================================================================
-    # JOIN RESULTS
+    # JOIN
     # ========================================================================
 
     def _join_sections(
@@ -2539,10 +2570,6 @@ class CVSectionSplitter:
             DetectionMethod,
         ],
     ) -> SectionMap:
-        """
-        Convierte acumuladores en SectionResult.
-        """
-
         result: SectionMap = {}
 
         for key in _EMPTY_SECTIONS:
@@ -2570,15 +2597,11 @@ class CVSectionSplitter:
         return result
 
     # ========================================================================
-    # EMPTY RESULT
+    # EMPTY
     # ========================================================================
 
     @staticmethod
     def _empty_result() -> SectionMap:
-        """
-        Devuelve el contrato vacío completo.
-        """
-
         return {
             key: SectionResult(
                 text="",

@@ -1,34 +1,226 @@
 import json
 import os
 from typing import List, Optional
-from datetime import datetime
+
 from backend.modules.cv.models.cv_document import CVDocument
 
-DB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data")
+
+DB_DIR = os.path.join(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.dirname(__file__)
+            )
+        )
+    ),
+    "data",
+)
+
 os.makedirs(DB_DIR, exist_ok=True)
+
 CV_DB = os.path.join(DB_DIR, "cvs.json")
 
+
 class CVRepository:
-    def __init__(self):
+    """
+    Persistencia de CVDocument.
+
+    La fuente de verdad de los CV persistidos es data/cvs.json.
+
+    Cada CV pertenece a un user_id y puede estar asociado a un
+    ProfessionalProfile mediante professional_profile_id.
+    """
+
+    def __init__(self) -> None:
         if not os.path.exists(CV_DB):
-            with open(CV_DB, "w", encoding="utf-8") as f:
-                json.dump([], f)
+            self._write_all([])
 
-    def _load(self) -> List[dict]:
-        with open(CV_DB, "r", encoding="utf-8") as f:
-            return json.load(f)
+    # ==========================================================
+    # LOW LEVEL STORAGE
+    # ==========================================================
 
-    def _save(self, data: List[dict]):
-        with open(CV_DB, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, default=str)
+    def _load_raw(self) -> List[dict]:
+        try:
+            with open(
+                CV_DB,
+                "r",
+                encoding="utf-8",
+            ) as file:
+                data = json.load(file)
 
-    def save(self, cv: CVDocument) -> CVDocument:
-        data = self._load()
+            if not isinstance(data, list):
+                return []
 
-        # Use Pydantic's model_dump to recursively serialize all nested models
-        # (e.g. CVMetadata) and coerce datetimes to ISO strings for JSON storage.
-        cv_dict = cv.model_dump(mode="json")
+            return data
+
+        except (FileNotFoundError, json.JSONDecodeError):
+            return []
+
+    def _write_all(self, data: List[dict]) -> None:
+        temp_file = f"{CV_DB}.tmp"
+
+        with open(
+            temp_file,
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                data,
+                file,
+                indent=2,
+                ensure_ascii=False,
+                default=str,
+            )
+
+        os.replace(
+            temp_file,
+            CV_DB,
+        )
+
+    # ==========================================================
+    # CREATE / UPDATE
+    # ==========================================================
+
+    def save(
+        self,
+        cv: CVDocument,
+    ) -> CVDocument:
+        """
+        Inserta o actualiza un CV.
+
+        La identidad del CV está determinada por cv.id.
+        """
+
+        data = self._load_raw()
+
+        cv_dict = cv.model_dump(
+            mode="json"
+        )
+
+        for index, existing in enumerate(data):
+            if existing.get("id") == cv.id:
+                data[index] = cv_dict
+                self._write_all(data)
+                return cv
 
         data.append(cv_dict)
-        self._save(data)
+
+        self._write_all(data)
+
         return cv
+
+    # ==========================================================
+    # GET BY ID
+    # ==========================================================
+
+    def get_by_id(
+        self,
+        cv_id: str,
+    ) -> Optional[CVDocument]:
+        """
+        Obtiene un CV por su identificador.
+        """
+
+        cv_id = cv_id.strip()
+
+        if not cv_id:
+            return None
+
+        for item in self._load_raw():
+            if str(item.get("id", "")).strip() == cv_id:
+                return CVDocument.model_validate(
+                    item
+                )
+
+        return None
+
+    # ==========================================================
+    # GET BY USER
+    # ==========================================================
+
+    def get_by_user(
+        self,
+        user_id: str,
+    ) -> List[CVDocument]:
+        """
+        Devuelve todos los CV pertenecientes al usuario.
+        """
+
+        user_id = user_id.strip()
+
+        if not user_id:
+            return []
+
+        result: List[CVDocument] = []
+
+        for item in self._load_raw():
+            if str(item.get("user_id", "")).strip() != user_id:
+                continue
+
+            try:
+                result.append(
+                    CVDocument.model_validate(item)
+                )
+            except Exception:
+                # No permitir que un CV corrupto bloquee
+                # la recuperación del resto.
+                continue
+
+        return result
+
+    # ==========================================================
+    # DELETE
+    # ==========================================================
+
+    def delete(
+        self,
+        cv_id: str,
+    ) -> bool:
+        """
+        Elimina un CV por ID.
+
+        Devuelve True si existía y fue eliminado.
+        """
+
+        cv_id = cv_id.strip()
+
+        if not cv_id:
+            return False
+
+        data = self._load_raw()
+
+        original_length = len(data)
+
+        data = [
+            item
+            for item in data
+            if str(item.get("id", "")).strip() != cv_id
+        ]
+
+        if len(data) == original_length:
+            return False
+
+        self._write_all(data)
+
+        return True
+
+    # ==========================================================
+    # GET ALL
+    # ==========================================================
+
+    def get_all(self) -> List[CVDocument]:
+        """
+        Devuelve todos los CV válidos almacenados.
+        """
+
+        result: List[CVDocument] = []
+
+        for item in self._load_raw():
+            try:
+                result.append(
+                    CVDocument.model_validate(item)
+                )
+            except Exception:
+                continue
+
+        return result

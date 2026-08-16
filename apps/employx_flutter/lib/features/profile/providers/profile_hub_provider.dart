@@ -1,4 +1,4 @@
-﻿import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/models/professional_profile_model.dart';
 import '../../../core/repositories/profile_repository.dart';
@@ -16,9 +16,13 @@ import '../models/profile_hub.dart';
 /// - ProfessionalProfile asociado al CV activo
 ///
 /// El ProfileHub es la fuente de verdad para la selección del CV.
+///
 /// MissionActions se ocupa del procesamiento de la misión/upload,
 /// pero no determina qué perfil debe mostrarse en la pantalla
 /// de Perfil Profesional.
+///
+/// Los CV persistidos en backend se hidratan mediante
+/// ProfileRepository.getCVs().
 class ProfileHubProvider extends ChangeNotifier {
   final ProfileRepository _profileRepository;
 
@@ -38,6 +42,8 @@ class ProfileHubProvider extends ChangeNotifier {
   String? _profileError;
 
   int _profileLoadRequest = 0;
+
+  int _cvHydrationRequest = 0;
 
   // ============================================================
   // GETTERS
@@ -69,16 +75,198 @@ class ProfileHubProvider extends ChangeNotifier {
 
   /// Inicializa el Profile Hub.
   ///
-  /// Si el perfil recibido ya tiene un CV activo, intenta cargar
-  /// automáticamente el ProfessionalProfile asociado.
+  /// Primero conserva el estado recibido por la aplicación y
+  /// después intenta hidratar los CV persistidos en backend.
+  ///
+  /// Una vez recuperados los CV:
+  ///
+  /// 1. conserva el CV activo actual si todavía existe;
+  /// 2. si no existe CV activo, selecciona el primero disponible;
+  /// 3. carga el ProfessionalProfile correspondiente al CV activo.
   Future<void> initialize(ProfileHub profile) async {
+    ++_cvHydrationRequest;
+    ++_profileLoadRequest;
+
     _profile = profile;
     _activeProfessionalProfile = null;
     _profileError = null;
+    _isLoadingProfile = false;
 
     notifyListeners();
 
-    await _loadActiveProfessionalProfile();
+    await loadPersistedCvs();
+  }
+
+  // ============================================================
+  // BACKEND HYDRATION
+  // ============================================================
+
+  /// Recupera los CV persistidos del backend y los incorpora
+  /// al ProfileHub actual.
+  ///
+  /// Esta operación es idempotente:
+  /// ejecutar varias veces no debe crear duplicados.
+  ///
+  /// La selección del CV activo sigue estas reglas:
+  ///
+  /// 1. conservar el CV activo actual si todavía existe;
+  /// 2. si no existe, conservar un CV marcado como activo;
+  /// 3. si tampoco existe, seleccionar el primer CV.
+  Future<void> loadPersistedCvs() async {
+    final requestId = ++_cvHydrationRequest;
+
+    try {
+      final persistedCvs =
+          await _profileRepository.getCVs();
+
+      // Si otra hidratación comenzó mientras esperábamos
+      // la respuesta, ignoramos esta respuesta.
+      if (requestId != _cvHydrationRequest) {
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // BACKEND SIN CVs
+      // ----------------------------------------------------------
+
+      if (persistedCvs.isEmpty) {
+        // No borramos los CV locales.
+        //
+        // Esto es importante para no destruir un estado local
+        // válido si el backend temporalmente no devuelve datos.
+        if (_profile.activeCv != null) {
+          await _loadActiveProfessionalProfile();
+        }
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // RECORDAR CV ACTIVO ACTUAL
+      // ----------------------------------------------------------
+
+      final currentActiveId =
+          _profile.activeCvId;
+
+      // ----------------------------------------------------------
+      // MERGE LOCAL + BACKEND
+      // ----------------------------------------------------------
+
+      final merged = <CVDocument>[];
+      final backendIds = <String>{};
+
+      // Primero conservamos los CV que ya estaban en memoria.
+      for (final localCv in _profile.cvs) {
+        merged.add(localCv);
+      }
+
+      // Después incorporamos los CV persistidos.
+      for (final persistedCv in persistedCvs) {
+        backendIds.add(persistedCv.id);
+
+        final existingIndex = merged.indexWhere(
+          (cv) => cv.id == persistedCv.id,
+        );
+
+        if (existingIndex == -1) {
+          merged.add(persistedCv);
+        } else {
+          // El backend es la fuente de verdad para los datos
+          // persistidos, pero conservamos localPath e isActive
+          // cuando existen localmente.
+          final existing = merged[existingIndex];
+
+          merged[existingIndex] =
+              persistedCv.copyWith(
+            localPath:
+                existing.localPath ??
+                    persistedCv.localPath,
+            isActive:
+                existing.isActive,
+          );
+        }
+      }
+
+      // ----------------------------------------------------------
+      // DETERMINAR CV ACTIVO
+      // ----------------------------------------------------------
+
+      String? nextActiveId;
+
+      // 1. Intentar conservar el CV activo anterior.
+      if (currentActiveId != null &&
+          currentActiveId.isNotEmpty &&
+          merged.any(
+            (cv) => cv.id == currentActiveId,
+          )) {
+        nextActiveId = currentActiveId;
+      }
+
+      // 2. Si no existe, buscar uno que venga marcado como activo.
+      if (nextActiveId == null) {
+        for (final cv in merged) {
+          if (cv.isActive) {
+            nextActiveId = cv.id;
+            break;
+          }
+        }
+      }
+
+      // 3. Si todavía no hay activo, usar el primero.
+      if (nextActiveId == null &&
+          merged.isNotEmpty) {
+        nextActiveId = merged.first.id;
+      }
+
+      // ----------------------------------------------------------
+      // NORMALIZAR ESTADO ACTIVO
+      // ----------------------------------------------------------
+
+      final normalized = merged.map((cv) {
+        return cv.copyWith(
+          isActive:
+              cv.id == nextActiveId,
+        );
+      }).toList(growable: false);
+
+      // ----------------------------------------------------------
+      // ACTUALIZAR PROFILE HUB
+      // ----------------------------------------------------------
+
+      _profile = _profile.copyWith(
+        cvs: normalized,
+        activeCvId: nextActiveId,
+        clearActiveCvId:
+            nextActiveId == null,
+      );
+
+      _profileError = null;
+
+      notifyListeners();
+
+      // ----------------------------------------------------------
+      // CARGAR PROFESSIONAL PROFILE
+      // ----------------------------------------------------------
+
+      await _loadActiveProfessionalProfile();
+    } catch (e) {
+      if (requestId != _cvHydrationRequest) {
+        return;
+      }
+
+      // No destruimos los CV locales si falla el backend.
+      //
+      // Si ya tenemos un CV activo, intentamos cargar su perfil
+      // profesional desde el estado disponible.
+      if (_profile.activeCv != null) {
+        await _loadActiveProfessionalProfile();
+      } else {
+        _profileError =
+            'No se pudieron cargar los CV guardados.';
+
+        notifyListeners();
+      }
+    }
   }
 
   // ============================================================
@@ -96,6 +284,7 @@ class ProfileHubProvider extends ChangeNotifier {
     }
 
     _profile = updated;
+
     notifyListeners();
   }
 
@@ -118,7 +307,8 @@ class ProfileHubProvider extends ChangeNotifier {
   }) async {
     final now = DateTime.now();
 
-    final shouldBeActive = !hasCvs;
+    // SIEMPRE hacemos que el CV recién procesado sea el activo
+    final shouldBeActive = true;
 
     final document = CVDocument(
       id: id,
@@ -129,26 +319,27 @@ class ProfileHubProvider extends ChangeNotifier {
       fileName: fileName,
       localPath: localPath,
       remotePath: remotePath,
-      professionalProfileId: professionalProfileId,
+      professionalProfileId:
+          professionalProfileId,
       createdAt: now,
       updatedAt: now,
       isActive: shouldBeActive,
     );
 
-    final updated = _profile.addCv(document);
+    var updated = _profile.addCv(document);
 
     if (identical(updated, _profile)) {
       return;
     }
 
+    // Forzar que el ProfileHub marque este CV como el activo,
+    // desactivando los anteriores.
+    updated = updated.selectActiveCv(document.id);
+
     _profile = updated;
 
-    // Notificamos inmediatamente para que la lista de CVs
-    // aparezca aunque la carga del perfil todavía esté en curso.
     notifyListeners();
 
-    // Solamente cambiamos/cargamos el perfil si este CV
-    // realmente se convirtió en el CV activo.
     if (shouldBeActive) {
       await _loadActiveProfessionalProfile();
     }
@@ -162,15 +353,12 @@ class ProfileHubProvider extends ChangeNotifier {
     final updated = _profile.selectActiveCv(cvId);
 
     if (identical(updated, _profile)) {
-      // Aunque el CV ya sea activo, intentamos garantizar que
-      // su perfil esté cargado.
       await _loadActiveProfessionalProfile();
       return;
     }
 
     _profile = updated;
 
-    // El perfil anterior deja de representar al CV activo.
     _activeProfessionalProfile = null;
     _profileError = null;
 
@@ -184,7 +372,8 @@ class ProfileHubProvider extends ChangeNotifier {
   /// Si se elimina el CV activo y el modelo selecciona otro,
   /// cargamos automáticamente el perfil correspondiente.
   Future<void> removeCv(String cvId) async {
-    final wasActive = _profile.activeCv?.id == cvId;
+    final wasActive =
+        _profile.activeCv?.id == cvId;
 
     final updated = _profile.removeCv(cvId);
 
@@ -211,11 +400,13 @@ class ProfileHubProvider extends ChangeNotifier {
   // ============================================================
 
   /// Carga el ProfessionalProfile correspondiente al CV activo.
-  Future<void> refreshActiveProfessionalProfile() async {
+  Future<void>
+      refreshActiveProfessionalProfile() async {
     await _loadActiveProfessionalProfile();
   }
 
-  Future<void> _loadActiveProfessionalProfile() async {
+  Future<void>
+      _loadActiveProfessionalProfile() async {
     final cv = _profile.activeCv;
 
     if (cv == null) {
@@ -241,7 +432,8 @@ class ProfileHubProvider extends ChangeNotifier {
       return;
     }
 
-    final requestId = ++_profileLoadRequest;
+    final requestId =
+        ++_profileLoadRequest;
 
     _isLoadingProfile = true;
     _profileError = null;
@@ -254,9 +446,9 @@ class ProfileHubProvider extends ChangeNotifier {
         profileId,
       );
 
-      // Si mientras esperábamos el servidor el usuario cambió
-      // de CV, ignoramos esta respuesta porque pertenece al CV
-      // anterior.
+      // Si mientras esperábamos el servidor el usuario
+      // cambió de CV, ignoramos esta respuesta porque
+      // pertenece al CV anterior.
       if (requestId != _profileLoadRequest) {
         return;
       }
@@ -323,6 +515,7 @@ class ProfileHubProvider extends ChangeNotifier {
   /// Limpia completamente el estado local.
   void clear() {
     ++_profileLoadRequest;
+    ++_cvHydrationRequest;
 
     _profile = const ProfileHub(
       id: 'local-user',

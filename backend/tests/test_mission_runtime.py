@@ -16,7 +16,7 @@ os.environ["LIA_DATA_DIR"] = _tmpdir
 from backend.storage.json_provider import JsonStorageProvider
 from backend.modules.mission.repositories import MissionRepository, MissionEventRepository
 from backend.modules.mission.models import Mission
-from backend.runtime.mission_state import MissionState, RECOVERABLE_STATES, TERMINAL_STATES, can_transition
+from backend.runtime.mission_state import MissionStatus, RECOVERABLE_STATUSES, TERMINAL_STATUSES, can_transition_status
 from backend.runtime.event_bus import RuntimeEventBus
 from backend.runtime.runtime_registry import RuntimeRegistry, init_runtime_registry
 from backend.runtime.recovery_engine import RecoveryEngine
@@ -31,9 +31,9 @@ def make_repos():
     storage = JsonStorageProvider(data_dir=_tmpdir)
     return MissionRepository(storage), MissionEventRepository(storage)
 
-def make_mission(title="Test Mission", state: MissionState = MissionState.CREATED) -> Mission:
+def make_mission(title="Test Mission", state: MissionStatus = MissionStatus.CREATED) -> Mission:
     m = Mission(title=title, career_goal="Software Engineer")
-    m.runtime_state = state
+    m.status = state
     return m
 
 
@@ -42,22 +42,22 @@ def make_mission(title="Test Mission", state: MissionState = MissionState.CREATE
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_fsm_valid_transitions():
-    assert can_transition(MissionState.CREATED, MissionState.QUEUED)
-    assert can_transition(MissionState.QUEUED, MissionState.RUNNING)
-    assert can_transition(MissionState.RUNNING, MissionState.COMPLETED)
-    assert can_transition(MissionState.RUNNING, MissionState.PAUSED)
-    assert can_transition(MissionState.RUNNING, MissionState.CANCELLED)
+    assert can_transition_status(MissionStatus.CREATED, MissionStatus.QUEUED)
+    assert can_transition_status(MissionStatus.QUEUED, MissionStatus.PROCESSING)
+    assert can_transition_status(MissionStatus.PROCESSING, MissionStatus.COMPLETED)
+    assert can_transition_status(MissionStatus.PROCESSING, MissionStatus.PAUSED)
+    assert can_transition_status(MissionStatus.PROCESSING, MissionStatus.CANCELLED)
     print("[PASS] test_fsm_valid_transitions")
 
 def test_fsm_invalid_transitions():
-    assert not can_transition(MissionState.COMPLETED, MissionState.RUNNING)
-    assert not can_transition(MissionState.CANCELLED, MissionState.RUNNING)
-    assert not can_transition(MissionState.CREATED, MissionState.COMPLETED)
+    assert not can_transition_status(MissionStatus.COMPLETED, MissionStatus.PROCESSING)
+    assert not can_transition_status(MissionStatus.CANCELLED, MissionStatus.PROCESSING)
+    assert not can_transition_status(MissionStatus.CREATED, MissionStatus.COMPLETED)
     print("[PASS] test_fsm_invalid_transitions")
 
 def test_fsm_terminal_states():
-    for state in TERMINAL_STATES:
-        assert can_transition(state, MissionState.RUNNING) is False
+    for state in TERMINAL_STATUSES:
+        assert can_transition_status(state, MissionStatus.PROCESSING) is False
     print("[PASS] test_fsm_terminal_states")
 
 
@@ -84,7 +84,7 @@ async def test_runtime_execution_and_timeline():
 
     # Verificar estado final
     saved = mission_repo.get_by_id(mission.id)
-    assert saved.runtime_state == MissionState.COMPLETED, f"Expected COMPLETED got {saved.runtime_state}"
+    assert saved.status == MissionStatus.COMPLETED, f"Expected COMPLETED got {saved.status}"
     assert len(saved.timeline) > 0, "Timeline debe tener entradas"
     assert saved.progress >= 0
     assert "MissionCompleted" in events_received
@@ -98,7 +98,7 @@ async def test_runtime_execution_and_timeline():
 async def test_shared_memory_persistence():
     mission_repo, event_repo = make_repos()
     mission = make_mission("SharedMemory Persistence Test")
-    mission.shared_memory["pre_existing_key"] = "pre_existing_value"
+    mission.context["pre_existing_key"] = "pre_existing_value"
     mission_repo.save(mission)
 
     bus = RuntimeEventBus()
@@ -109,7 +109,7 @@ async def test_shared_memory_persistence():
 
     saved = mission_repo.get_by_id(mission.id)
     # La clave pre-existente debe sobrevivir
-    assert saved.shared_memory.get("pre_existing_key") == "pre_existing_value", \
+    assert saved.context.get("pre_existing_key") == "pre_existing_value", \
         "SharedMemory pre-existente no se preservó"
     print("[PASS] test_shared_memory_persistence")
 
@@ -132,7 +132,7 @@ async def test_cancellation():
     await runtime.cancel("Test cancel")
 
     saved = mission_repo.get_by_id(mission.id)
-    assert saved.runtime_state == MissionState.CANCELLED, f"Expected CANCELLED got {saved.runtime_state}"
+    assert saved.status == MissionStatus.CANCELLED, f"Expected CANCELLED got {saved.status}"
     print("[PASS] test_cancellation")
 
 
@@ -144,11 +144,11 @@ async def test_recovery_engine_detects_interrupted():
     mission_repo, event_repo = make_repos()
 
     # Simular una misión que quedó en RUNNING (backend cayó)
-    interrupted = make_mission("Interrupted Mission", state=MissionState.RUNNING)
+    interrupted = make_mission("Interrupted Mission", state=MissionStatus.PROCESSING)
     mission_repo.save(interrupted)
 
     # Misión completada — no debe recuperarse
-    completed = make_mission("Completed Mission", state=MissionState.COMPLETED)
+    completed = make_mission("Completed Mission", state=MissionStatus.COMPLETED)
     mission_repo.save(completed)
 
     bus = RuntimeEventBus()
@@ -170,7 +170,7 @@ async def test_recovery_engine_recovers_and_completes():
     mission_repo, event_repo = make_repos()
 
     # Simular misión interrumpida en RUNNING
-    interrupted = make_mission("Recovery Completion Test", state=MissionState.RUNNING)
+    interrupted = make_mission("Recovery Completion Test", state=MissionStatus.PROCESSING)
     mission_repo.save(interrupted)
 
     bus = RuntimeEventBus()
@@ -190,7 +190,7 @@ async def test_recovery_engine_recovers_and_completes():
     assert recovered_events[0].mission_id == interrupted.id
 
     saved = mission_repo.get_by_id(interrupted.id)
-    assert saved.runtime_state == MissionState.COMPLETED, f"Expected COMPLETED after recovery, got {saved.runtime_state}"
+    assert saved.status == MissionStatus.COMPLETED, f"Expected COMPLETED after recovery, got {saved.status}"
     assert len(saved.timeline) > 0
     print(f"[PASS] test_recovery_engine_recovers_and_completes — {len(saved.timeline)} timeline entries")
 

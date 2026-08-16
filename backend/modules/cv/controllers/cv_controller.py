@@ -18,6 +18,9 @@ from backend.modules.cv.services.extraction_service import (
 from backend.modules.cv.repositories.cv_repository import (
     CVRepository,
 )
+from backend.modules.cv.models.cv_document import (
+    CVDocument,
+)
 
 from backend.modules.mission.controller import MissionController
 from backend.modules.mission.repositories import (
@@ -47,6 +50,28 @@ router = APIRouter(
     prefix="/api/v1/cv",
     tags=["CV"],
 )
+
+
+# ======================================================================
+# CURRENT USER
+# ======================================================================
+
+def get_current_user_id() -> str:
+    """
+    Devuelve el identificador del usuario actual.
+
+    EmployX todavía no tiene autenticación conectada al flujo de CV.
+    Por ello, durante esta fase se utiliza el usuario temporal:
+
+        temp_user
+
+    IMPORTANTE:
+    Cuando se conecte el sistema de autenticación real, este será
+    el único punto que deberá cambiar para obtener el user_id desde
+    el token/sesión del usuario.
+    """
+
+    return "temp_user"
 
 
 # ======================================================================
@@ -94,6 +119,52 @@ def get_cv_service() -> CVService:
 
 
 # ======================================================================
+# LIST USER CVS
+# ======================================================================
+
+@router.get(
+    "",
+    response_model=list[CVDocument],
+)
+async def get_user_cvs() -> list[CVDocument]:
+    """
+    Devuelve todos los CV persistidos pertenecientes
+    al usuario actual.
+
+    Fuente de verdad:
+
+        CVRepository
+            ↓
+        data/cvs.json
+
+    Actualmente el usuario se resuelve mediante get_current_user_id().
+    """
+
+    user_id = get_current_user_id()
+
+    AppLogger.info(
+        "CV",
+        f"Solicitando CVs del usuario [{user_id}]",
+    )
+
+    cv_repository = CVRepository()
+
+    cvs = cv_repository.get_by_user(
+        user_id,
+    )
+
+    AppLogger.info(
+        "CV",
+        (
+            f"CVs recuperados para [{user_id}]: "
+            f"{len(cvs)}"
+        ),
+    )
+
+    return cvs
+
+
+# ======================================================================
 # UPLOAD CV
 # ======================================================================
 
@@ -135,8 +206,14 @@ async def upload_cv(
         profile
             → ProfessionalProfile
 
-    Esto es importante porque el modelo CVDocument actual
-    NO contiene un campo id ni professional_profile_id.
+    CVDocument contiene actualmente:
+
+        id
+        user_id
+        professional_profile_id
+
+    Por tanto, ambos identificadores quedan persistidos
+    directamente en el CV.
     """
 
     start_time = AppLogger.get_time_ms()
@@ -362,18 +439,6 @@ async def upload_cv(
 
     # ==================================================================
     # 9. CONSTRUIR RESPUESTA
-    # ==================================================================
-    #
-    # IMPORTANTE:
-    #
-    # cv
-    #   = CVDocument
-    #
-    # profile
-    #   = ProfessionalProfile
-    #
-    # No intentamos meter profile_id dentro de CVDocument porque
-    # el modelo actual no posee ese campo.
     # ==================================================================
 
     response = UploadMissionResponse(

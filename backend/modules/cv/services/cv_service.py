@@ -65,6 +65,10 @@ class CVService:
           ↓
         ProfileRepository
           ↓
+        CVDocument.professional_profile_id
+          ↓
+        CVRepository
+          ↓
         Mission.profile_id
           ↓
         Runtime
@@ -331,6 +335,30 @@ class CVService:
             )
 
             # ======================================================
+            # 5B. ASOCIAR CVDocument AL PROFESSIONAL PROFILE
+            # ======================================================
+
+            document.user_id = saved_profile.user_id
+            document.professional_profile_id = saved_profile.id
+
+            saved_document = self.cv_repo.save(
+                document
+            )
+
+            self.last_document = saved_document
+
+            AppLogger.info(
+                "CV",
+                (
+                    "CVDocument persistido correctamente "
+                    f"[cv_id={saved_document.id}] "
+                    f"[profile_id={saved_document.professional_profile_id}] "
+                    f"[user_id={saved_document.user_id}]"
+                ),
+                mission_id=mission_id,
+            )
+
+            # ======================================================
             # 6. ASOCIAR PROFILE_ID A LA MISSION
             # ======================================================
 
@@ -372,6 +400,7 @@ class CVService:
                 ),
                 metadata={
                     "profile_id": profile_id,
+                    "cv_id": saved_document.id,
                     "filename": filename,
                 },
                 stage=current_stage,
@@ -382,19 +411,22 @@ class CVService:
             )
 
             # ======================================================
-            # 8. FINALIZAR MISSION
+            # 8. PREPARAR MISSION PARA AGENTES
             # ======================================================
 
-            mission.status = MissionStatus.COMPLETED
-            mission.current_step = MissionStage.COMPLETE
+            mission.status = MissionStatus.QUEUED
+            # Maintain the current step or advance to a logical waiting state
+            mission.current_step = MissionStage.UPDATE_RUNTIME
 
             self.mission_repo.save(mission)
 
             AppLogger.info(
                 "CVService",
                 (
-                    "CV procesado completamente: "
+                    "CV procesado parcialmente: "
                     "CVDocument → ProfessionalProfile → Mission "
+                    "lista para el Agent Engine "
+                    f"[cv_id={saved_document.id}] "
                     f"[profile_id={profile_id}]"
                 ),
                 mission_id=mission_id,

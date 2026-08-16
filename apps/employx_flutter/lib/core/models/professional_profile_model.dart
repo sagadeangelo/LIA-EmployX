@@ -268,30 +268,37 @@ class Skills {
     if (json is Map<String, dynamic>) {
       final technical = _skillList(
         json['technical_skills'],
+        'technical',
       );
 
       final soft = _skillList(
         json['soft_skills'],
+        'soft',
       );
 
       final tools = _skillList(
         json['tools'],
+        'technical',
       );
 
       final frameworks = _skillList(
         json['frameworks'],
+        'technical',
       );
 
       final programming = _skillList(
         json['programming_languages'],
+        'technical',
       );
 
       final databases = _skillList(
         json['databases'],
+        'technical',
       );
 
       final cloud = _skillList(
         json['cloud'],
+        'technical',
       );
 
       return Skills(
@@ -773,19 +780,20 @@ List<String> _stringList(dynamic value) {
   return value.map((item) => item.toString()).toList();
 }
 
-List<Skill> _skillList(dynamic value) {
+List<Skill> _skillList(dynamic value, [String? category]) {
   if (value is! List) {
     return const [];
   }
 
-  return value
-      .whereType<Map>()
-      .map(
-        (item) => Skill.fromJson(
-          Map<String, dynamic>.from(item),
-        ),
-      )
-      .toList();
+  final List<Skill> result = [];
+  for (final item in value) {
+    if (item is Map) {
+      result.add(Skill.fromJson(Map<String, dynamic>.from(item)));
+    } else if (item is String) {
+      result.add(Skill(name: item, category: category ?? 'technical'));
+    }
+  }
+  return result;
 }
 
 List<T> _objectList<T>(
