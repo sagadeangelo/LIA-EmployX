@@ -101,9 +101,9 @@ class MissionActions extends ChangeNotifier {
 
       // Ensure we only pick truly active missions, ignoring terminal states
       // even if the backend accidentally returned them.
-      final activeMissions = missions.where((m) => 
-        m.status != 'COMPLETED' && 
-        m.status != 'FAILED' && 
+      final activeMissions = missions.where((m) =>
+        m.status != 'COMPLETED' &&
+        m.status != 'FAILED' &&
         m.status != 'CANCELLED'
       ).toList();
 
@@ -151,18 +151,6 @@ class MissionActions extends ChangeNotifier {
 
   /// Carga el ProfessionalProfile asociado directamente
   /// al CV seleccionado.
-  ///
-  /// Flujo:
-  ///
-  /// CVDocument
-  ///     ↓
-  /// professionalProfileId
-  ///     ↓
-  /// ProfileRepository
-  ///     ↓
-  /// ProfessionalProfile
-  ///     ↓
-  /// _currentProfile
   Future<void> loadProfileForCv(
     CVDocument cv,
   ) async {
@@ -259,6 +247,60 @@ class MissionActions extends ChangeNotifier {
   }
 
   // ============================================================
+  // REFRESH PROFILE AFTER MISSION
+  // ============================================================
+
+  /// Refresca el ProfessionalProfile después de que los agentes
+  /// terminan una misión.
+  ///
+  /// El backend procesa los agentes de forma asíncrona, por lo que
+  /// el perfil cargado inmediatamente después del upload puede
+  /// contener todavía valores provisionales (por ejemplo, métricas 0).
+  ///
+  /// Aquí hacemos una nueva lectura desde backend y sincronizamos
+  /// también el ProfileHub, manteniendo una única fuente de verdad.
+  Future<void> refreshProfileAfterMission() async {
+    try {
+      AppLogger.info(
+        'Profile',
+        'Refrescando ProfessionalProfile después de completar la misión.',
+      );
+
+      await _profileHubProvider.refreshActiveProfessionalProfile();
+
+      final refreshedProfile =
+          _profileHubProvider.activeProfessionalProfile;
+
+      if (refreshedProfile != null) {
+        _currentProfile = refreshedProfile;
+        _error = null;
+
+        AppLogger.info(
+          'Profile',
+          'ProfessionalProfile actualizado después de la misión.',
+        );
+
+        notifyListeners();
+        return;
+      }
+
+      // Fallback: si ProfileHub no pudo resolver el perfil activo,
+      // intentamos cargarlo directamente desde el CV activo.
+      await loadActiveCvProfile();
+    } catch (e) {
+      _error = e.toString();
+
+      AppLogger.error(
+        'Profile',
+        'Error refrescando ProfessionalProfile después de la misión.',
+        error: e,
+      );
+
+      notifyListeners();
+    }
+  }
+
+  // ============================================================
   // CREATE MISSION
   // ============================================================
 
@@ -306,20 +348,6 @@ class MissionActions extends ChangeNotifier {
   // UPLOAD CV
   // ============================================================
 
-  /// Sube y procesa un CV.
-  ///
-  /// El backend devuelve:
-  ///
-  /// - MissionSnapshot
-  /// - CVDocument
-  ///
-  /// El CVDocument contiene el professionalProfileId
-  /// generado por el backend.
-  ///
-  /// Ese ID se utiliza para:
-  ///
-  /// 1. Registrar correctamente el CV en ProfileHub.
-  /// 2. Cargar el ProfessionalProfile correspondiente.
   Future<UploadMissionResponse> uploadCV({
     String? filePath,
     List<int>? fileBytes,
@@ -357,10 +385,6 @@ class MissionActions extends ChangeNotifier {
 
       _currentMission = mission;
 
-      // ==========================================================
-      // CV DOCUMENT DEVUELTO POR BACKEND
-      // ==========================================================
-
       final cvDocument = response.cv;
 
       if (cvDocument == null) {
@@ -370,7 +394,6 @@ class MissionActions extends ChangeNotifier {
         );
       }
 
-      // NO DEPENDER de cvDocument.professionalProfileId
       // UploadMissionResponse.profile es la fuente de verdad.
       final profileId = response.profile?.id.trim();
 
@@ -386,10 +409,6 @@ class MissionActions extends ChangeNotifier {
         '${profileId ?? 'NULL'}',
         missionId: mission.id,
       );
-
-      // ==========================================================
-      // REGISTRAR CV EN PROFILE HUB
-      // ==========================================================
 
       await _profileHubProvider.registerProcessedCv(
         id: cvDocument.id.isNotEmpty
@@ -407,23 +426,7 @@ class MissionActions extends ChangeNotifier {
         displayName: cvDocument.displayName,
       );
 
-      // ==========================================================
-      // CARGAR PROFESSIONAL PROFILE
-      // ==========================================================
-
       if (profileId != null && profileId.isNotEmpty) {
-        // En lugar de pasar cvDocument, pasamos un CVDocument temporal 
-        // o llamamos a cargar por id.
-        // Pero loadProfileForCv espera un CVDocument que TENGA el profileId.
-        // Como acabamos de registrarlo en ProfileHubProvider, el CV activo
-        // o registrado ahora lo tiene. 
-        // Mejor recrear un documento con el ID, o simplemente esperar a que 
-        // ProfileHubProvider lo cargue por sí mismo.
-        
-        // Wait, ProfileHubProvider.registerProcessedCv YA se encarga de cargar
-        // el ProfessionalProfile activo!
-        // Y MissionActions sincroniza con _profileHubProvider si es necesario.
-        // De hecho, loadActiveCvProfile() hace eso.
         await loadProfileForCv(
           cvDocument.copyWith(professionalProfileId: profileId),
         );
