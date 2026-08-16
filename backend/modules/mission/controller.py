@@ -241,20 +241,6 @@ class MissionController:
                     logger.info(
                         "[%s] Completado. Progress: %d%%", agent.name, result.progress
                     )
-                    
-                    # --- INICIO INSTRUMENTACIÓN TEMPORAL ---
-                    print(f"\n=========================================")
-                    print(f"Agent: {agent.name}")
-                    print(f"memory_updates: {result.memory_updates}")
-                    print(f"Context aplicado correctamente: TRUE")
-                    print(f"Mission metadata: {context.mission.state.metadata is not None}")
-                    print(f"profile_id: {context.mission.state.profile_id}")
-                    print(f"cv_document (has_metadata): {context.mission.state.metadata is not None}")
-                    skills = context.shared_memory.get(SharedMemoryKey.SKILLS, [])
-                    skills_len = len(skills) if skills else 0
-                    print(f"professional_profile (skills len): {skills_len}")
-                    print(f"=========================================\n")
-                    # --- FIN INSTRUMENTACIÓN TEMPORAL ---
                 else:
                     logger.error("[%s] Falló: %s", agent.name, result.error)
                     self.log_event(
