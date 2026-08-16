@@ -86,7 +86,7 @@ class MissionController:
         description: str,
         severity: str = "info",
         metadata: dict = None,
-        stage: MissionStage = MissionStage.RECEIVE_FILE,
+        stage: MissionStage = MissionStage.UPDATE_RUNTIME,
         userMessage: Optional[str] = None,
         developerMessage: Optional[str] = None,
         logs: Optional[str] = None,
@@ -307,6 +307,7 @@ class MissionController:
             title="Ciclo de Misión Completado",
             description=f"El motor de agentes terminó. Progreso actual: {mission.progress}%.",
             metadata={"progress": mission.progress},
+            stage=MissionStage.COMPLETE,
         )
 
     def _sync_final_professional_profile(
