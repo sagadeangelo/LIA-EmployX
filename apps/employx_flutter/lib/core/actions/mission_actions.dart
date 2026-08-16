@@ -103,6 +103,13 @@ class MissionActions extends ChangeNotifier {
     }
 
     try {
+      // On a browser refresh the Provider state is recreated. Hydrate
+      // the persisted CV/Profile state before resolving the mission so
+      // the completed mission can be rendered with its profile again.
+      if (_profileHubProvider.cvs.isEmpty) {
+        await _profileHubProvider.loadPersistedCvs();
+      }
+
       final missions =
           await _missionRepository.getActiveMissions();
 
@@ -116,21 +123,23 @@ class MissionActions extends ChangeNotifier {
 
       if (activeMissions.isNotEmpty) {
         _currentMission = activeMissions.first;
-
-        final profileId =
-            _currentMission?.profileId?.trim();
-
-        if (profileId != null &&
-            profileId.isNotEmpty) {
-          _currentProfile =
-              await _profileRepository.getProfile(
-            profileId,
-          );
-        } else {
-          _currentProfile = null;
-        }
       } else {
-        _currentMission = null;
+        // No active mission is expected after a successful CV analysis.
+        // Restore the latest persisted mission so a browser refresh does
+        // not make the application appear as if no CV had ever been uploaded.
+        _currentMission = await _missionRepository.getLatestMission();
+      }
+
+      final profileId =
+          _currentMission?.profileId?.trim();
+
+      if (profileId != null &&
+          profileId.isNotEmpty) {
+        _currentProfile =
+            await _profileRepository.getProfile(
+          profileId,
+        );
+      } else {
         _currentProfile = null;
       }
 
