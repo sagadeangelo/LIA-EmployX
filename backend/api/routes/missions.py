@@ -30,6 +30,25 @@ def get_mission_controller():
     return MissionController(mission_repo, event_repo, runtime_registry._agent_registry)
 
 
+def normalize_agent_statuses(controller: MissionController, mission: Mission):
+    """Expose mission-aware readiness instead of raw agent lifecycle states."""
+    statuses = controller.get_agent_status(mission.id)
+
+    # CREATED is an internal registry lifecycle state. Once the mission is
+    # terminal, an agent that never executed because its preconditions were
+    # not met is semantically SKIPPED for the Command Center.
+    if mission.status in {
+        MissionStatus.COMPLETED,
+        MissionStatus.FAILED,
+        MissionStatus.CANCELLED,
+    }:
+        for status in statuses:
+            if status.status.strip().lower() == "created":
+                status.status = "skipped"
+
+    return statuses
+
+
 @router.post("", response_model=MissionSnapshot)
 async def create_mission(mission_data: MissionCreate):
     mission = Mission(**mission_data.model_dump(), user_id="temp_user")
@@ -38,7 +57,7 @@ async def create_mission(mission_data: MissionCreate):
     return MissionSnapshot(
         mission=mission,
         runtime=RuntimeStatus(online=True, active_agents=[], current_agent=None),
-        agent_statuses=controller.get_agent_status(mission.id),
+        agent_statuses=normalize_agent_statuses(controller, mission),
         timeline=[],
         progress=mission.progress,
         current_step=mission.current_step.value,
@@ -82,7 +101,7 @@ async def get_mission_snapshot(mission_id: str):
             active_agents=mission.active_agents,
             current_agent=mission.current_agent,
         ),
-        agent_statuses=controller.get_agent_status(mission_id),
+        agent_statuses=normalize_agent_statuses(controller, mission),
         timeline=events,
         progress=mission.progress,
         current_step=mission.current_step.value,
