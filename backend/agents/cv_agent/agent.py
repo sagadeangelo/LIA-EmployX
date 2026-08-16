@@ -16,6 +16,7 @@ from pathlib import Path
 from backend.agents.base.base_agent import BaseAgent, AgentMetadata
 from backend.agents.base.agent_context import AgentContext
 from backend.agents.base.agent_result import AgentResult
+from backend.modules.cv.repositories.cv_repository import CVRepository
 from backend.modules.cv.services.extraction_service import ExtractionService
 from backend.modules.mission.models import MissionEvent, MissionEventType
 from backend.runtime.mission_state import MissionStage
@@ -28,6 +29,7 @@ class CVParserAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.extraction_service = ExtractionService()
+        self.cv_repository = CVRepository()
 
     @property
     def metadata(self) -> AgentMetadata:
@@ -44,25 +46,45 @@ class CVParserAgent(BaseAgent):
         )
 
     def can_execute(self, context: AgentContext) -> bool:
-        # Ejecuta si el archivo existe pero el cv_document o metadata aún no ha sido parseado
-        has_file = context.mission.state.file_path and os.path.exists(
+        # Ejecuta si todavía no existe metadata en la misión y hay un CV
+        # persistido asociado al perfil o un archivo disponible para parsear.
+        has_file = bool(
             context.mission.state.file_path
+            and os.path.exists(context.mission.state.file_path)
+        )
+        has_profile = bool(
+            (context.mission.state.profile_id or "").strip()
         )
         needs_parsing = context.mission.state.metadata is None
-        return has_file and needs_parsing
+        return needs_parsing and (has_file or has_profile)
 
     async def execute(self, context: AgentContext) -> AgentResult:
         file_path = context.mission.state.file_path
-        if not file_path or not os.path.exists(file_path):
-            return AgentResult.failure("El archivo no existe o la ruta es inválida.")
+        profile_id = (context.mission.state.profile_id or "").strip()
 
         self._set_status("running")
-        self.log(f"Iniciando extracción de texto para: {file_path}")
 
         try:
-            cv_document = self.extraction_service.process(
-                Path(file_path), mission_id=context.mission.id
+            # Reuse persisted CVDocument when the upload already processed
+            # the document for this ProfessionalProfile. This keeps CV Parser
+            # in the mission pipeline without parsing the same file twice.
+            cv_document = (
+                self.cv_repository.get_by_professional_profile_id(profile_id)
+                if profile_id
+                else None
             )
+            reused = cv_document is not None
+
+            if cv_document is None:
+                if not file_path or not os.path.exists(file_path):
+                    return AgentResult.failure(
+                        "El archivo no existe o la ruta es inválida."
+                    )
+
+                self.log(f"Iniciando extracción de texto para: {file_path}")
+                cv_document = self.extraction_service.process(
+                    Path(file_path), mission_id=context.mission.id
+                )
 
             # Bridge to state
             cv_doc_dict = cv_document.model_dump(mode="json")
@@ -72,8 +94,16 @@ class CVParserAgent(BaseAgent):
                     mission_id=context.mission.id,
                     type=MissionEventType.TEXT_EXTRACTED,
                     source="CVParser",
-                    title="Extracción Completada",
-                    description="El texto del documento fue extraído y estructurado.",
+                    title=(
+                        "Extracción Reutilizada"
+                        if reused
+                        else "Extracción Completada"
+                    ),
+                    description=(
+                        "El CV ya estaba procesado y se reutilizó el CVDocument persistido."
+                        if reused
+                        else "El texto del documento fue extraído y estructurado."
+                    ),
                     stage=MissionStage.EXTRACT_TEXT,
                     metadata={
                         "language": (
@@ -82,18 +112,26 @@ class CVParserAgent(BaseAgent):
                             else "unknown"
                         ),
                         "sections": len(cv_document.sections),
+                        "reused": reused,
                     },
                 )
             ]
 
             self._set_progress(100)
             self._set_status("completed")
-            self.log("Parseo de documento completado exitosamente.")
+            self.log(
+                "CVDocument reutilizado correctamente."
+                if reused
+                else "Parseo de documento completado exitosamente."
+            )
 
-            # Create Profile
-            repo = ProfileRepository()
-            profile = ProfessionalProfileMapper.from_cv_document(cv_document)
-            repo.save(profile)
+            if reused:
+                resulting_profile_id = profile_id
+            else:
+                repo = ProfileRepository()
+                profile = ProfessionalProfileMapper.from_cv_document(cv_document)
+                repo.save(profile)
+                resulting_profile_id = profile.id
 
             return AgentResult.ok(
                 progress=100,
@@ -103,7 +141,7 @@ class CVParserAgent(BaseAgent):
                     "metadata": cv_document.metadata,
                     "raw_text": cv_doc_dict.get("raw_text"),
                     "sections": cv_doc_dict.get("sections"),
-                    "profile_id": profile.id,
+                    "profile_id": resulting_profile_id,
                 },
             )
 
