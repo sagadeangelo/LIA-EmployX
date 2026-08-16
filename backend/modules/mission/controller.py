@@ -252,9 +252,39 @@ class MissionController:
                         severity="error",
                         metadata={"agent_id": agent.id, "error": result.error},
                     )
+                    mission.status = MissionStatus.FAILED
+                    mission.failureReason = result.error or f"El agente '{agent.name}' falló."
+                    mission.errors.append(mission.failureReason)
+                    self.mission_repo.save(mission)
+                    logger.error(
+                        "[Mission: %s] Misión marcada como FAILED por agente %s.",
+                        mission_id,
+                        agent.name,
+                    )
+                    return
 
             except Exception as exc:
                 logger.exception("[%s] Excepcion inesperada: %s", agent.name, str(exc))
+                error_message = f"Excepción inesperada en {agent.name}: {exc}"
+                self.log_event(
+                    mission_id=mission_id,
+                    source="MissionController",
+                    event_type=MissionEventType.MISSION_FAILED,
+                    title=f"Excepción en Agente: {agent.name}",
+                    description=error_message,
+                    severity="error",
+                    metadata={"agent_id": agent.id, "error": str(exc)},
+                )
+                mission.status = MissionStatus.FAILED
+                mission.failureReason = error_message
+                mission.errors.append(error_message)
+                self.mission_repo.save(mission)
+                logger.error(
+                    "[Mission: %s] Misión marcada como FAILED por excepción en %s.",
+                    mission_id,
+                    agent.name,
+                )
+                return
 
         # 4. FINAL PROFILE SYNC — keep the upload-created profile as canonical.
         # Some pipeline agents may create a second profile while parsing the CV.
