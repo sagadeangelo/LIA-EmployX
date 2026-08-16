@@ -138,6 +138,37 @@ class CVRepository:
         return None
 
     # ==========================================================
+    # GET BY PROFESSIONAL PROFILE
+    # ==========================================================
+
+    def get_by_professional_profile_id(
+        self,
+        professional_profile_id: str,
+    ) -> Optional[CVDocument]:
+        """
+        Obtiene el CV asociado a un ProfessionalProfile.
+        """
+
+        professional_profile_id = professional_profile_id.strip()
+
+        if not professional_profile_id:
+            return None
+
+        for item in self._load_raw():
+            if (
+                str(item.get("professional_profile_id", "")).strip()
+                != professional_profile_id
+            ):
+                continue
+
+            try:
+                return CVDocument.model_validate(item)
+            except Exception:
+                return None
+
+        return None
+
+    # ==========================================================
     # GET BY USER
     # ==========================================================
 
