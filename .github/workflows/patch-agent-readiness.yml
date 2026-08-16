@@ -1,4 +1,4 @@
-name: Patch Agent Readiness
+name: Patch Timeline Severity
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Patch Agent Readiness
+      - name: Patch timeline severity mapping
         shell: python
         run: |
           from pathlib import Path
@@ -26,17 +26,17 @@ jobs:
           path = Path('apps/employx_flutter/lib/features/dashboard/views/command_center_screen.dart')
           text = path.read_text(encoding='utf-8')
 
-          import_line = "import '../../../core/models/mission_snapshot_model.dart';\n"
-          if import_line not in text:
-              anchor = "import '../../../core/providers/mission_provider.dart';\n"
-              text = text.replace(anchor, anchor + import_line, 1)
+          old = '''              return LiaTimelineItem(\n                text: event.title,\n                isCompleted: true,\n                stage: event.stage,\n                userMessage: event.userMessage,\n                developerMessage: event.developerMessage,\n                duration: event.duration ?? 0,\n                isError: event.severity == 'error',\n              );'''
 
-          start = text.index('  Widget _buildAgentReadiness(BuildContext context) {')
-          end = text.index('  Widget _buildActivityTimeline(BuildContext context, dynamic snapshot) {', start)
+          new = '''              final severity = event.severity.toString().trim().toLowerCase();\n              final isError = severity == 'error' || severity == 'critical';\n              final isCompleted = severity == 'info' || severity == 'success';\n\n              return LiaTimelineItem(\n                text: event.title,\n                isCompleted: isCompleted,\n                stage: event.stage,\n                userMessage: event.userMessage,\n                developerMessage: event.developerMessage,\n                duration: event.duration ?? 0,\n                isError: isError,\n              );'''
 
-          replacement = '''  Widget _buildAgentReadiness(BuildContext context) {\n    final colors = context.liaColors;\n    final typography = context.liaTypography;\n    final spacings = context.liaSpacings;\n    final snapshot = context.watch<MissionProvider>().snapshot;\n\n    const agentNames = [\n      'Career Agent',\n      'CV Expert',\n      'ATS Analyzer',\n      'Job Hunter',\n      'LinkedIn Optimizer',\n      'Cover Letter AI',\n      'Interview Coach',\n      'Negotiation Coach',\n    ];\n\n    final statuses = snapshot?.agentStatuses ?? const <AgentStatusModel>[];\n    final missionStatus = snapshot?.mission.status.toString().trim().toUpperCase();\n\n    String normalize(String value) => value.trim().toLowerCase().replaceAll('_', ' ');\n\n    AgentStatusModel? findStatus(String name) {\n      final target = normalize(name);\n      for (final status in statuses) {\n        if (normalize(status.name) == target) return status;\n      }\n      return null;\n    }\n\n    String displayStatus(AgentStatusModel? status) {\n      if (status == null) return snapshot == null ? 'N/A' : 'N/A';\n\n      final normalized = normalize(status.status);\n      switch (normalized) {\n        case 'completed':\n        case 'complete':\n        case 'success':\n          return 'READY';\n        case 'running':\n        case 'processing':\n        case 'executing':\n          return status.progress >= 100 ? 'READY' : '${status.progress}%';\n        case 'failed':\n        case 'error':\n          return 'ERROR';\n        case 'paused':\n          return 'PAUSED';\n        case 'skipped':\n          return 'SKIPPED';\n        case 'created':\n          // CREATED is an internal lifecycle state, not a readiness state.\n          // Once the mission is terminal, an agent still in CREATED was not\n          // executed by this mission and therefore is semantically SKIPPED.\n          // During an active mission it is still waiting for its turn.\n          if (missionStatus == 'COMPLETED' || missionStatus == 'FAILED' ||\n              missionStatus == 'CANCELLED') {\n            return 'SKIPPED';\n          }\n          return 'WAITING';\n        case 'n/a':\n        case 'na':\n        case 'disabled':\n          return 'N/A';\n        default:\n          return status.progress > 0 ? '${status.progress}%' : status.status.toUpperCase();\n      }\n    }\n\n    Color statusColor(AgentStatusModel? status) {\n      if (status == null) return colors.textMuted;\n      final normalized = normalize(status.status);\n      switch (normalized) {\n        case 'completed':\n        case 'complete':\n        case 'success':\n          return colors.success;\n        case 'failed':\n        case 'error':\n          return colors.error;\n        case 'running':\n        case 'processing':\n        case 'executing':\n          return colors.accentPrimary;\n        case 'paused':\n        case 'skipped':\n        case 'created':\n          return colors.textMuted;\n        case 'n/a':\n        case 'na':\n        case 'disabled':\n          return colors.textMuted;\n        default:\n          return status.progress > 0 ? colors.accentPrimary : colors.textSecondary;\n      }\n    }\n\n    return Column(\n      crossAxisAlignment: CrossAxisAlignment.start,\n      children: [\n        Text('AGENT READINESS',\n            style: typography.caption.copyWith(color: colors.textMuted)),\n        SizedBox(height: spacings.sm),\n        LiaGlassPanel(\n          child: Column(\n            mainAxisSize: MainAxisSize.min,\n            children: agentNames.map((agent) {\n              final status = findStatus(agent);\n              final label = displayStatus(status);\n              final color = statusColor(status);\n              final progress = status?.progress ?? 0;\n              final normalized = normalize(status?.status ?? '');\n              final pulsing = normalized == 'running' ||\n                  normalized == 'processing' ||\n                  normalized == 'executing';\n\n              return Padding(\n                padding: EdgeInsets.only(\n                    bottom: agent == agentNames.last ? 0 : spacings.sm),\n                child: Row(\n                  mainAxisAlignment: MainAxisAlignment.spaceBetween,\n                  children: [\n                    Flexible(\n                      child: Text(\n                        agent,\n                        style: typography.bodyMedium.copyWith(\n                          color: colors.textPrimary,\n                          fontFamily: 'monospace',\n                        ),\n                        overflow: TextOverflow.ellipsis,\n                      ),\n                    ),\n                    const SizedBox(width: 8),\n                    Row(\n                      mainAxisSize: MainAxisSize.min,\n                      children: [\n                        LiaStatusIndicator(\n                          color: color,\n                          label: label,\n                          isPulsing: pulsing,\n                        ),\n                        if (status != null && progress > 0 && progress < 100) ...[\n                          const SizedBox(width: 8),\n                          SizedBox(\n                            width: 48,\n                            child: LinearProgressIndicator(\n                              value: progress / 100,\n                              minHeight: 3,\n                              backgroundColor: colors.border.withValues(alpha: 0.35),\n                              valueColor: AlwaysStoppedAnimation<Color>(color),\n                            ),\n                          ),\n                        ],\n                      ],\n                    ),\n                  ],\n                ),\n              );\n            }).toList(),\n          ),\n        ),\n      ],\n    );\n  }\n\n'''
+          if old not in text:
+              raise SystemExit('Expected timeline mapping was not found; aborting without changes.')
 
-          path.write_text(text[:start] + replacement + text[end:], encoding='utf-8')
+          if new in text:
+              raise SystemExit('Timeline severity mapping is already patched.')
+
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
 
       - name: Remove temporary workflow and commit
         shell: bash
@@ -46,5 +46,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/employx_flutter/lib/features/dashboard/views/command_center_screen.dart .github/workflows/patch-agent-readiness.yml
           git diff --cached --quiet && exit 0
-          git commit -m "fix(ui): normalize agent readiness semantics"
+          git commit -m "fix(ui): map timeline severity to visual state"
           git push
