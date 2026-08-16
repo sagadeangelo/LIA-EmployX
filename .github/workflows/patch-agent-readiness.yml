@@ -15,42 +15,63 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Patch timeline severity mapping
+      - name: Apply timeline severity patch
         shell: python
         run: |
           from pathlib import Path
 
           path = Path('apps/employx_flutter/lib/features/dashboard/views/command_center_screen.dart')
           text = path.read_text(encoding='utf-8')
-
-          old_completed = "                isCompleted: true,\n                stage: event.stage,"
-          new_completed = "                isCompleted: event.severity == 'info' || event.severity == 'success',\n                stage: event.stage,"
-
-          old_error = "                isError: event.severity == 'error',"
-          new_error = "                isError: event.severity == 'error' || event.severity == 'critical',"
-
           start = text.index('  Widget _buildActivityTimeline(BuildContext context, dynamic snapshot) {')
           timeline = text[start:]
 
-          if old_completed not in timeline:
-              raise SystemExit('Expected timeline completion mapping was not found; aborting.')
-          if old_error not in timeline:
-              raise SystemExit('Expected timeline error mapping was not found; aborting.')
+          old_completed = "                isCompleted: true,\n                stage: event.stage,"
+          new_completed = "                isCompleted: event.severity == 'info' || event.severity == 'success',\n                stage: event.stage,"
+          old_error = "                isError: event.severity == 'error',"
+          new_error = "                isError: event.severity == 'error' || event.severity == 'critical',"
+
+          if old_completed not in timeline or old_error not in timeline:
+              raise SystemExit('Expected timeline mapping not found; aborting.')
 
           timeline = timeline.replace(old_completed, new_completed, 1)
           timeline = timeline.replace(old_error, new_error, 1)
           path.write_text(text[:start] + timeline, encoding='utf-8')
 
-      - name: Remove temporary workflow and commit
+      - name: Commit patched file through GitHub Contents API
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          rm -f .github/workflows/patch-agent-readiness.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/employx_flutter/lib/features/dashboard/views/command_center_screen.dart .github/workflows/patch-agent-readiness.yml
-          git diff --cached --quiet && exit 0
-          git commit -m "fix(ui): map timeline severity to visual state"
-          git push
+          set -euo pipefail
+          FILE='apps/employx_flutter/lib/features/dashboard/views/command_center_screen.dart'
+          SHA=$(gh api "repos/$REPO/contents/$FILE?ref=$BRANCH" --jq '.sha')
+          CONTENT=$(base64 -w0 "$FILE")
+          printf '%s' "$CONTENT" | gh api \
+            --method PUT \
+            "repos/$REPO/contents/$FILE" \
+            -f message='fix(ui): map timeline severity to visual state' \
+            -f branch="$BRANCH" \
+            -f sha="$SHA" \
+            -f content="$CONTENT" \
+            >/dev/null
+
+      - name: Remove temporary workflow through GitHub Contents API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          FILE='.github/workflows/patch-agent-readiness.yml'
+          SHA=$(gh api "repos/$REPO/contents/$FILE?ref=$BRANCH" --jq '.sha')
+          gh api \
+            --method DELETE \
+            "repos/$REPO/contents/$FILE" \
+            -f message='chore(ci): remove temporary timeline patch workflow' \
+            -f branch="$BRANCH" \
+            -f sha="$SHA" \
+            >/dev/null
