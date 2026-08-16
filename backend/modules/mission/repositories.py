@@ -1,11 +1,9 @@
-import logging as _logging
+import logging
 from typing import List, Optional
 from datetime import datetime
 from .models import Mission, MissionEvent
 from backend.storage.provider import StorageProvider
 from backend.runtime.pipeline import MissionPipeline
-
-_diag = _logging.getLogger("DIAG")
 
 class MissionRepository:
     def __init__(self, storage: StorageProvider):
@@ -17,15 +15,6 @@ class MissionRepository:
         mission.progress = MissionPipeline.get_progress(mission.current_step)
 
         mission_dict = mission.model_dump()
-
-        # ── PUNTO 4a ────────────────────────────────────────────────
-        _cv = mission_dict.get("shared_memory", {}).get("cv_document", {})
-        _diag.info(
-            "REPO_SAVE    metadata=%s",
-            _cv.get("metadata") if isinstance(_cv, dict) else f"TYPE={type(_cv)}",
-        )
-        # ────────────────────────────────────────────────────────────
-
         self.storage.save_mission(mission_dict)
         return mission
 
