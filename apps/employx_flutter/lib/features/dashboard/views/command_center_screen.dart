@@ -1691,14 +1691,21 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
         else
           LiaTimeline(
             items: (snapshot.timeline as List).map<LiaTimelineItem>((event) {
+              final severity =
+                  event.severity.toString().trim().toLowerCase();
+              final isError =
+                  severity == 'error' || severity == 'critical';
+              final isCompleted =
+                  severity == 'info' || severity == 'success';
+
               return LiaTimelineItem(
                 text: event.title,
-                isCompleted: true,
+                isCompleted: isCompleted,
                 stage: event.stage,
                 userMessage: event.userMessage,
                 developerMessage: event.developerMessage,
                 duration: event.duration ?? 0,
-                isError: event.severity == 'error',
+                isError: isError,
               );
             }).toList(),
           )
