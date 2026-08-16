@@ -14,6 +14,7 @@ import '../../../core/ui/lia_metric.dart';
 import '../../../core/ui/lia_timeline.dart';
 import '../../../core/utils/app_logger.dart';
 import '../../../core/providers/upload_provider.dart';
+import '../../profile/providers/profile_hub_provider.dart';
 import '../widgets/cv_upload_overlay.dart';
 
 class CommandCenterScreen extends StatefulWidget {
@@ -43,10 +44,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       }
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // File picking — shows a confirmation sheet before starting upload
-  // ---------------------------------------------------------------------------
 
   Future<void> _pickAndUploadCV() async {
     final startTime = DateTime.now();
@@ -103,7 +100,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
     if (!mounted) return;
 
-    // Show confirmation sheet before committing to a mission
     final confirmed = await _showFileConfirmation(
       context,
       fileName: fileName,
@@ -115,8 +111,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     await _startUploadFlow(filePath, fileBytes, file.name);
   }
 
-  /// Lightweight confirmation bottom sheet shown before the upload starts.
-  /// Lets the user verify the file and cancel without creating a mission.
   Future<bool> _showFileConfirmation(
     BuildContext context, {
     required String fileName,
@@ -143,7 +137,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Handle bar
               Center(
                 child: Container(
                   width: 40,
@@ -155,7 +148,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                   ),
                 ),
               ),
-
               Text(
                 'CV seleccionado',
                 style: GoogleFonts.inter(
@@ -166,8 +158,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-
-              // File card
               Container(
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
@@ -218,10 +208,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 28),
-
-              // Action buttons
               Row(
                 children: [
                   Expanded(
@@ -297,10 +284,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Core upload flow — called after confirmation
-  // ---------------------------------------------------------------------------
-
   Future<void> _startUploadFlow(String? filePath, List<int>? fileBytes, String fileName) async {
     if (!mounted) return;
 
@@ -308,11 +291,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final uploadProvider = context.read<UploadProvider>();
     final missionProvider = context.read<MissionProvider>();
 
-    if (!mounted) return;
-
-    // El feedback visual debe comenzar inmediatamente después de seleccionar
-    // el archivo. No hacemos un ping previo: el propio POST del CV es la
-    // comprobación real de conectividad y evitamos una espera innecesaria.
     uploadProvider.startUpload(fileName);
 
     AppLogger.info(
@@ -335,8 +313,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       );
 
       final response = await missionActions.uploadCV(
-        // En Web no existe una ruta local utilizable por el navegador.
-        // El repositorio debe recibir los bytes.
         filePath: kIsWeb ? null : filePath,
         fileBytes: kIsWeb ? fileBytes : null,
         fileName: fileName,
@@ -377,17 +353,10 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Overlay Callbacks — all business decisions live here, not in the overlay
-  // ---------------------------------------------------------------------------
-
-  /// Called when the user taps "Reintentar" inside the error screen.
-  /// The backend guarantees retryMode == RESUME_ALLOWED when this is enabled.
   Future<void> _handleRetry() async {
     final uploadProvider = context.read<UploadProvider>();
     final missionActions = context.read<MissionActions>();
 
-    // Clear error state to go back to progress mode
     uploadProvider.clearError();
 
     try {
@@ -398,23 +367,15 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     }
   }
 
-  /// Called when the user taps "Seleccionar otro CV".
-  /// Detaches the failed mission (keeps it in history), resets the upload
-  /// state, stops monitoring, and opens the FilePicker — all without closing
-  /// the overlay. The overlay returns to progress mode once startUpload() fires.
   Future<void> _handlePickNew() async {
     final uploadProvider = context.read<UploadProvider>();
     final missionProvider = context.read<MissionProvider>();
     final missionActions = context.read<MissionActions>();
 
-    // 1. Detach failed mission (it stays in history)
     missionActions.detachCurrentMission();
-    // 2. Stop polling old mission
     missionProvider.stopMonitoring();
-    // 3. Reset upload visual state
     uploadProvider.reset();
 
-    // 4. Pick new file
     AppLogger.info('UploadFlow', '[PickNew] Abriendo FilePicker desde el Overlay...');
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -423,7 +384,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
 
     if (result == null || result.files.isEmpty) {
-      // User cancelled
       return;
     }
 
@@ -447,7 +407,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       return;
     }
 
-    // Show confirmation overlay
     if (!mounted) return;
     final confirmed = await _showFileConfirmation(
       context,
@@ -457,10 +416,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
     if (!confirmed || !mounted) return;
 
-    // 6. Start the new upload (overlay is still open; startUpload resets it to progress mode)
     uploadProvider.startUpload(file.name);
 
-    // Capture providers before the async gap to satisfy use_build_context_synchronously
     final missionActionsForUpload = context.read<MissionActions>();
     final missionProviderForUpload = context.read<MissionProvider>();
 
@@ -487,26 +444,17 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     }
   }
 
-  /// Called when the user taps "Cerrar" inside the error screen.
-  /// The overlay is responsible for calling Navigator.pop() after this runs.
   void _handleCloseOverlay() {
     final uploadProvider = context.read<UploadProvider>();
     final missionProvider = context.read<MissionProvider>();
     final missionActions = context.read<MissionActions>();
 
-    // Detach but do NOT delete — mission stays in history
     missionActions.detachCurrentMission();
     missionProvider.stopMonitoring();
-
-    // Full reset so no stale state persists for next session
     uploadProvider.reset();
 
     AppLogger.info('CommandCenter', 'Overlay cerrado por el usuario. Misión archivada.');
   }
-
-  // ---------------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -514,6 +462,8 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final spacings = context.liaSpacings;
     final missionProvider = context.watch<MissionProvider>();
     final missionActions = context.watch<MissionActions>();
+    final profileHub = context.watch<ProfileHubProvider>();
+    final professionalProfile = profileHub.activeProfessionalProfile;
     final snapshot = missionProvider.snapshot;
     final hasMission = snapshot != null;
 
@@ -552,7 +502,11 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                           SizedBox(height: spacings.lg),
                           _buildRuntimeHealth(context, snapshot),
                           SizedBox(height: spacings.lg),
-                          _buildCareerHealth(context, snapshot),
+                          _buildCareerHealth(
+                            context,
+                            snapshot,
+                            professionalProfile,
+                          ),
                           SizedBox(height: spacings.lg),
                           _buildMetricsPanel(
                             context,
@@ -581,7 +535,11 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                               SizedBox(height: spacings.lg),
                               _buildRuntimeHealth(context, snapshot),
                               SizedBox(height: spacings.lg),
-                              _buildCareerHealth(context, snapshot),
+                              _buildCareerHealth(
+                                context,
+                                snapshot,
+                                professionalProfile,
+                              ),
                               SizedBox(height: spacings.lg),
                               _buildRoadmap(context),
                             ],
@@ -1024,10 +982,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Dashboard Widgets
-  // ---------------------------------------------------------------------------
-
   Widget _buildMissionStatus(BuildContext context, dynamic snapshot) {
     final colors = context.liaColors;
     final typography = context.liaTypography;
@@ -1081,9 +1035,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     final lastEvent = snapshot.timeline.isNotEmpty
         ? (snapshot.timeline.last.userMessage ?? snapshot.timeline.last.title)
         : 'Iniciando...';
-    
+
     final activeStatuses = const [
-      'CREATED', 'UPLOADING', 'STORED', 'QUEUED', 
+      'CREATED', 'UPLOADING', 'STORED', 'QUEUED',
       'PROCESSING', 'WAITING_AGENT', 'RUNNING'
     ];
     final isRunning = activeStatuses.contains(mission.status);
@@ -1239,18 +1193,24 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  /// Career health panel with a frozen red bar when the mission has FAILED.
-  /// The bar shows exactly how far the pipeline got before stopping.
-  Widget _buildCareerHealth(BuildContext context, dynamic snapshot) {
+  Widget _buildCareerHealth(
+    BuildContext context,
+    dynamic snapshot,
+    dynamic profile,
+  ) {
     final colors = context.liaColors;
     final typography = context.liaTypography;
     final spacings = context.liaSpacings;
 
     final isFailed = snapshot?.mission.status == 'FAILED';
-    final progress =
+    final missionProgress =
         snapshot != null ? snapshot.progress.toDouble() / 100 : 0.0;
 
-    // Frozen progress color: red on failure, accent on running/complete
+    final career = profile?.careerMetrics;
+    final level = career?.employabilityLevel?.toString().trim() ?? '';
+    final careerScore = _careerVisualScore(level.toLowerCase());
+    final hasCareerScore = profile != null && career != null;
+
     final Color missionBarColor =
         isFailed ? colors.error : colors.accentPrimary;
 
@@ -1262,16 +1222,15 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
               style: typography.caption.copyWith(color: colors.textMuted)),
           SizedBox(height: spacings.md),
           LiaProgressBar(
-            progress: progress,
+            progress: hasCareerScore ? careerScore / 100.0 : 0.0,
             color: colors.accentTertiary,
             label: 'Score General',
-            trailingText: snapshot != null
-                ? 'Calculando...'
-                : 'Esperando primer análisis',
+            trailingText: hasCareerScore
+                ? '$careerScore'
+                : 'Esperando perfil profesional',
           ),
           SizedBox(height: spacings.lg),
 
-          // Mission progress section header
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -1309,10 +1268,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
           ),
           SizedBox(height: spacings.md),
 
-          // The bar itself — color freezes to red on failure
           _buildMissionProgressBar(
             context,
-            progress: progress,
+            progress: missionProgress,
             color: missionBarColor,
             isFailed: isFailed,
             snapshot: snapshot,
@@ -1325,7 +1283,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
                 Icon(Icons.info_outline, size: 13, color: colors.error),
                 const SizedBox(width: 6),
                 Text(
-                  'Proceso detenido en ${(progress * 100).toInt()}%',
+                  'Proceso detenido en ${(missionProgress * 100).toInt()}%',
                   style: typography.bodyMedium.copyWith(
                     color: colors.error.withValues(alpha: 0.8),
                     fontSize: 12,
@@ -1339,9 +1297,19 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
     );
   }
 
-  /// Custom mission progress bar that shows ██████▒▒▒▒ (frozen vs remaining)
-  /// when isFailed is true. Uses LiaProgressBar colors but adds a dimmed
-  /// "remaining" segment so the visual gap is immediately clear.
+  int _careerVisualScore(String level) {
+    switch (level) {
+      case 'high':
+        return 100;
+      case 'medium':
+        return 60;
+      case 'low':
+        return 30;
+      default:
+        return 0;
+    }
+  }
+
   Widget _buildMissionProgressBar(
     BuildContext context, {
     required double progress,
@@ -1362,7 +1330,6 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
       );
     }
 
-    // Failed: show frozen progress + dimmed remaining segment
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1386,11 +1353,9 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
             height: 8,
             child: Stack(
               children: [
-                // Full track (dimmed)
                 Container(
                   color: color.withValues(alpha: 0.12),
                 ),
-                // Frozen progress
                 FractionallySizedBox(
                   widthFactor: progress.clamp(0.0, 1.0),
                   child: Container(
@@ -1488,7 +1453,7 @@ class _CommandCenterScreenState extends State<CommandCenterScreen> {
 
   Widget _buildMetricsPanel(BuildContext context, bool hasMission, dynamic profile) {
     final spacings = context.liaSpacings;
-    
+
     String? atsScore;
     String? linkedinScore;
     String? jobMatch;
