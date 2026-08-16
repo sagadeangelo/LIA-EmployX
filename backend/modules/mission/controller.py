@@ -190,6 +190,9 @@ class MissionController:
 
         # 1. Construir el contexto inicial (inmutable desde la perspectiva de cada agente)
         context = self._build_context(mission)
+        canonical_profile_id = (
+            mission.state.profile_id or mission.profile_id
+        )
         agents = self.registry.get_all_agents()
 
         if not agents:
@@ -267,11 +270,31 @@ class MissionController:
             except Exception as exc:
                 logger.exception("[%s] Excepcion inesperada: %s", agent.name, str(exc))
 
-        # 4. FINAL PROFILE TRACE — intentionally before COMPLETED.
-        # This is diagnostic only: it does not mutate the profile or mission.
-        self._trace_final_professional_profile(mission_id, mission, context)
+        # 4. FINAL PROFILE SYNC — keep the upload-created profile as canonical.
+        # Some pipeline agents may create a second profile while parsing the CV.
+        # Their persisted analysis must be copied to the canonical profile before
+        # the mission becomes COMPLETED, because Flutter reads that profile ID.
+        self._sync_final_professional_profile(
+            mission_id=mission_id,
+            canonical_profile_id=canonical_profile_id,
+            context=context,
+        )
 
-        # 5. Mark mission COMPLETED and persist — this is what Flutter's poller waits for
+        # Restore the canonical profile ID on the mission before COMPLETED so
+        # subsequent snapshots and clients continue to reference the same profile.
+        if canonical_profile_id:
+            mission.profile_id = canonical_profile_id
+            mission.state.profile_id = canonical_profile_id
+            context.mission.profile_id = canonical_profile_id
+            context.mission.state.profile_id = canonical_profile_id
+
+        # 5. FINAL PROFILE TRACE — immediately before COMPLETED.
+        self._trace_final_professional_profile(
+            mission_id=mission_id,
+            profile_id=canonical_profile_id,
+        )
+
+        # 6. Mark mission COMPLETED and persist — this is what Flutter's poller waits for
         mission.status = MissionStatus.COMPLETED
         mission.current_step = MissionStage.COMPLETE
         self.mission_repo.save(mission)
@@ -286,27 +309,118 @@ class MissionController:
             metadata={"progress": mission.progress},
         )
 
-    def _trace_final_professional_profile(
+    def _sync_final_professional_profile(
         self,
         mission_id: str,
-        mission: Mission,
+        canonical_profile_id: Optional[str],
         context: AgentContext,
     ) -> None:
         """
-        Diagnóstico quirúrgico de la persistencia del ProfessionalProfile.
+        Sincroniza el ProfessionalProfile canónico con el perfil que usaron
+        los agentes durante el ciclo.
+
+        CV Parser puede generar un segundo ProfessionalProfile y cambiar
+        temporalmente mission.state.profile_id. Los agentes posteriores
+        trabajan y persisten sus resultados sobre ese perfil de trabajo.
+        El perfil creado durante el upload, en cambio, es el que Flutter
+        recibió y consulta. Antes de COMPLETED debemos consolidar ambos.
+        """
+        if not canonical_profile_id:
+            logger.error(
+                "[PROFILE_SYNC][%s] SIN canonical_profile_id. "
+                "No se puede sincronizar el ProfessionalProfile final.",
+                mission_id,
+            )
+            return
+
+        try:
+            repository = ProfileRepository()
+            canonical = repository.get_by_id(canonical_profile_id)
+
+            if canonical is None:
+                logger.error(
+                    "[PROFILE_SYNC][%s] canonical profile_id=%s NO EXISTE.",
+                    mission_id,
+                    canonical_profile_id,
+                )
+                return
+
+            working_profile_id = context.mission.state.profile_id
+            working = (
+                repository.get_by_id(working_profile_id)
+                if working_profile_id
+                else None
+            )
+
+            if working is not None and working.id != canonical.id:
+                merged_data = working.model_dump(mode="json")
+                merged_data["id"] = canonical.id
+                merged_data["user_id"] = canonical.user_id
+                canonical = type(canonical).model_validate(merged_data)
+                logger.info(
+                    "[PROFILE_SYNC][%s] Consolidando perfil de trabajo %s -> canónico %s.",
+                    mission_id,
+                    working.id,
+                    canonical.id,
+                )
+
+            memory = context.shared_memory
+
+            if memory.contains(SharedMemoryKey.CV_SCORE):
+                canonical.cv_score = int(
+                    memory.get(SharedMemoryKey.CV_SCORE)
+                )
+            if memory.contains(SharedMemoryKey.CV_KEYWORDS):
+                canonical.cv_keywords = list(
+                    memory.get(SharedMemoryKey.CV_KEYWORDS) or []
+                )
+            if memory.contains(SharedMemoryKey.ATS_SCORE):
+                canonical.ats_metrics.ats_score = int(
+                    memory.get(SharedMemoryKey.ATS_SCORE)
+                )
+            if memory.contains(SharedMemoryKey.MISSING_KEYWORDS):
+                canonical.ats_metrics.missing_keywords = list(
+                    memory.get(SharedMemoryKey.MISSING_KEYWORDS) or []
+                )
+            if memory.contains(SharedMemoryKey.ATS_COMPATIBILITY):
+                canonical.ats_metrics.compatibility = str(
+                    memory.get(SharedMemoryKey.ATS_COMPATIBILITY) or ""
+                )
+            if memory.contains(SharedMemoryKey.LINKEDIN_SCORE):
+                canonical.linkedin_metrics.score = int(
+                    memory.get(SharedMemoryKey.LINKEDIN_SCORE)
+                )
+
+            repository.save(canonical)
+
+            logger.info(
+                "[PROFILE_SYNC][%s] ProfessionalProfile canónico persistido "
+                "[profile_id=%s] ats=%s linkedin=%s cv=%s",
+                mission_id,
+                canonical.id,
+                canonical.ats_metrics.ats_score,
+                canonical.linkedin_metrics.score,
+                canonical.cv_score,
+            )
+
+        except Exception:
+            logger.exception(
+                "[PROFILE_SYNC][%s] Error sincronizando ProfessionalProfile final.",
+                mission_id,
+            )
+
+    def _trace_final_professional_profile(
+        self,
+        mission_id: str,
+        profile_id: Optional[str],
+    ) -> None:
+        """
+        Diagnóstico final de la persistencia del ProfessionalProfile.
 
         Se ejecuta inmediatamente antes de marcar la misión como COMPLETED.
-        Lee el perfil DOS veces:
-          1. desde el contexto de la misión;
-          2. desde ProfileRepository, que vuelve a leer profiles.json.
-
-        Así podemos distinguir entre:
-          - el pipeline no produjo scores;
-          - los scores existen pero no se persistieron;
-          - los scores sí quedaron persistidos y Flutter recibe otra cosa.
+        Vuelve a leer profiles.json a través de ProfileRepository para
+        comprobar exactamente lo que Flutter podrá recibir.
         """
-        profile_id = mission.state.profile_id or context.mission.state.profile_id
-
         if not profile_id:
             logger.error(
                 "[PROFILE_TRACE][%s] SIN profile_id antes de COMPLETED. "
@@ -329,7 +443,7 @@ class MissionController:
                 return
 
             logger.info(
-                "[PROFILE_TRACE][%s] IN-MEMORY/REPOSITORY profile_id=%s "
+                "[PROFILE_TRACE][%s] PERSISTED profile_id=%s "
                 "ats=%s linkedin=%s cv=%s skills=%s employability=%s",
                 mission_id,
                 profile.id,
@@ -365,7 +479,7 @@ class MissionController:
                 )
             else:
                 logger.info(
-                    "[PROFILE_TRACE][%s] OK: al menos un score fue persistido antes de COMPLETED.",
+                    "[PROFILE_TRACE][%s] OK: perfil canónico persistido antes de COMPLETED.",
                     mission_id,
                 )
 
