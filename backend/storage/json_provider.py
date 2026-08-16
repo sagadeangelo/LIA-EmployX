@@ -25,9 +25,6 @@ class JsonStorageProvider(StorageProvider):
             json.dump(data, f, indent=2, default=str)
 
     def save_mission(self, mission_data: Dict[str, Any]) -> None:
-        import logging as _logging
-        _diag = _logging.getLogger("DIAG")
-
         data = self._load(self.mission_file)
         mission_id = mission_data.get("id")
         existing = next((i for i, m in enumerate(data) if m.get("id") == mission_id), None)
@@ -37,19 +34,11 @@ class JsonStorageProvider(StorageProvider):
         else:
             data.append(mission_data)
 
-        # ── PUNTO 4b ────────────────────────────────────────────────
-        _cv = mission_data.get("shared_memory", {}).get("cv_document", {})
-        _diag.info(
-            "PRE_WRITE    metadata=%s",
-            _cv.get("metadata") if isinstance(_cv, dict) else f"TYPE={type(_cv)}",
-        )
-        # ────────────────────────────────────────────────────────────
-
         self._save(self.mission_file, data)
 
     def get_mission(self, mission_id: str) -> Optional[Dict[str, Any]]:
         data = self._load(self.mission_file)
-        return next((m for m in data if m.get("id") == mission_id), None)
+        return next((m for m in data if m.get("id") == mission_id), None
 
     def list_missions(self) -> List[Dict[str, Any]]:
         return self._load(self.mission_file)
