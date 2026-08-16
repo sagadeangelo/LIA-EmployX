@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import '../theme/lia_theme.dart';
 import 'lia_glass_panel.dart';
 
@@ -10,6 +10,7 @@ class LiaTimelineItem {
   final String? developerMessage;
   final int duration;
   final bool isError;
+  final bool isSkipped;
 
   LiaTimelineItem({
     required this.text,
@@ -19,6 +20,7 @@ class LiaTimelineItem {
     this.developerMessage,
     this.duration = 0,
     this.isError = false,
+    this.isSkipped = false,
   });
 }
 
@@ -66,7 +68,7 @@ class LiaTimeline extends StatelessWidget {
         children: grouped.entries.map((entry) {
           final stage = entry.key;
           final stageItems = entry.value;
-          
+
           return Padding(
             padding: EdgeInsets.only(bottom: spacings.lg),
             child: Column(
@@ -80,6 +82,11 @@ class LiaTimeline extends StatelessWidget {
                   SizedBox(height: spacings.sm),
                 ],
                 ...stageItems.map((item) {
+                  final skipped = item.isSkipped ||
+                      (item.text.toLowerCase().contains('agente omitido')) ||
+                      (item.userMessage?.toLowerCase().contains('agente omitido') ?? false);
+                  final completed = item.isCompleted && !skipped;
+
                   return Padding(
                     padding: EdgeInsets.only(bottom: item == stageItems.last ? 0 : spacings.md),
                     child: Row(
@@ -92,10 +99,18 @@ class LiaTimeline extends StatelessWidget {
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: item.isError ? colors.error : (item.isCompleted ? colors.accentPrimary : colors.textMuted),
+                              color: item.isError
+                                  ? colors.error
+                                  : (skipped
+                                      ? colors.textMuted
+                                      : (completed ? colors.accentPrimary : colors.textMuted)),
                               width: 2,
                             ),
-                            color: item.isError ? colors.error.withOpacity(0.2) : (item.isCompleted ? colors.accentPrimary.withOpacity(0.2) : Colors.transparent),
+                            color: item.isError
+                                ? colors.error.withOpacity(0.2)
+                                : (completed
+                                    ? colors.accentPrimary.withOpacity(0.2)
+                                    : Colors.transparent),
                           ),
                         ),
                         SizedBox(width: spacings.md),
@@ -103,12 +118,31 @@ class LiaTimeline extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                item.userMessage ?? item.text,
-                                style: typography.bodyMedium.copyWith(
-                                  color: item.isError ? colors.error : (item.isCompleted ? colors.textPrimary : colors.textSecondary),
-                                  fontFamily: 'monospace',
-                                ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      item.userMessage ?? item.text,
+                                      style: typography.bodyMedium.copyWith(
+                                        color: item.isError
+                                            ? colors.error
+                                            : (completed ? colors.textPrimary : colors.textSecondary),
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ),
+                                  if (skipped) ...[
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'SKIPPED',
+                                      style: typography.caption.copyWith(
+                                        color: colors.textMuted,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                               if (item.duration > 0) ...[
                                 SizedBox(height: 2),
@@ -122,7 +156,7 @@ class LiaTimeline extends StatelessWidget {
                                 Tooltip(
                                   message: item.developerMessage ?? '',
                                   child: Text(
-                                    'Ver detalles tÃ©cnicos',
+                                    'Ver detalles técnicos',
                                     style: typography.caption.copyWith(color: colors.accentTertiary, decoration: TextDecoration.underline),
                                   ),
                                 ),
@@ -142,4 +176,3 @@ class LiaTimeline extends StatelessWidget {
     );
   }
 }
-
