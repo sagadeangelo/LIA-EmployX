@@ -33,6 +33,7 @@ from backend.modules.mission.repositories import (
     MissionEventRepository,
 )
 from backend.modules.mission.task_executor import TaskExecutor
+from backend.modules.profile.repositories.profile_repository import ProfileRepository
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +267,11 @@ class MissionController:
             except Exception as exc:
                 logger.exception("[%s] Excepcion inesperada: %s", agent.name, str(exc))
 
-        # 4. Mark mission COMPLETED and persist — this is what Flutter's poller waits for
+        # 4. FINAL PROFILE TRACE — intentionally before COMPLETED.
+        # This is diagnostic only: it does not mutate the profile or mission.
+        self._trace_final_professional_profile(mission_id, mission, context)
+
+        # 5. Mark mission COMPLETED and persist — this is what Flutter's poller waits for
         mission.status = MissionStatus.COMPLETED
         mission.current_step = MissionStage.COMPLETE
         self.mission_repo.save(mission)
@@ -280,6 +285,95 @@ class MissionController:
             description=f"El motor de agentes terminó. Progreso actual: {mission.progress}%.",
             metadata={"progress": mission.progress},
         )
+
+    def _trace_final_professional_profile(
+        self,
+        mission_id: str,
+        mission: Mission,
+        context: AgentContext,
+    ) -> None:
+        """
+        Diagnóstico quirúrgico de la persistencia del ProfessionalProfile.
+
+        Se ejecuta inmediatamente antes de marcar la misión como COMPLETED.
+        Lee el perfil DOS veces:
+          1. desde el contexto de la misión;
+          2. desde ProfileRepository, que vuelve a leer profiles.json.
+
+        Así podemos distinguir entre:
+          - el pipeline no produjo scores;
+          - los scores existen pero no se persistieron;
+          - los scores sí quedaron persistidos y Flutter recibe otra cosa.
+        """
+        profile_id = mission.state.profile_id or context.mission.state.profile_id
+
+        if not profile_id:
+            logger.error(
+                "[PROFILE_TRACE][%s] SIN profile_id antes de COMPLETED. "
+                "No se puede verificar la persistencia del ProfessionalProfile.",
+                mission_id,
+            )
+            return
+
+        try:
+            repository = ProfileRepository()
+            profile = repository.get_by_id(profile_id)
+
+            if profile is None:
+                logger.error(
+                    "[PROFILE_TRACE][%s] profile_id=%s NO EXISTE en ProfileRepository "
+                    "inmediatamente antes de COMPLETED.",
+                    mission_id,
+                    profile_id,
+                )
+                return
+
+            logger.info(
+                "[PROFILE_TRACE][%s] IN-MEMORY/REPOSITORY profile_id=%s "
+                "ats=%s linkedin=%s cv=%s skills=%s employability=%s",
+                mission_id,
+                profile.id,
+                profile.ats_metrics.ats_score,
+                profile.linkedin_metrics.score,
+                profile.cv_score,
+                len(profile.skills.technical_skills),
+                profile.career_metrics.employability_level,
+            )
+
+            logger.info(
+                "[PROFILE_TRACE][%s] METRICS_DETAILS profile_id=%s "
+                "ats_keywords=%s ats_missing=%s linkedin_recommendations=%s "
+                "career_strengths=%s career_weaknesses=%s",
+                mission_id,
+                profile.id,
+                len(profile.ats_metrics.detected_keywords),
+                len(profile.ats_metrics.missing_keywords),
+                len(profile.linkedin_metrics.recommendations),
+                len(profile.career_metrics.strengths),
+                len(profile.career_metrics.weaknesses),
+            )
+
+            if (
+                profile.ats_metrics.ats_score == 0
+                and profile.linkedin_metrics.score == 0
+                and profile.cv_score == 0
+            ):
+                logger.error(
+                    "[PROFILE_TRACE][%s] ALERTA: los tres scores principales siguen en 0 "
+                    "justo antes de COMPLETED. El problema está antes de Flutter.",
+                    mission_id,
+                )
+            else:
+                logger.info(
+                    "[PROFILE_TRACE][%s] OK: al menos un score fue persistido antes de COMPLETED.",
+                    mission_id,
+                )
+
+        except Exception:
+            logger.exception(
+                "[PROFILE_TRACE][%s] Error leyendo/verificando ProfessionalProfile antes de COMPLETED.",
+                mission_id,
+            )
 
     def _build_context(self, mission: Mission) -> AgentContext:
         """Construye el AgentContext inicial para un ciclo de misión."""
