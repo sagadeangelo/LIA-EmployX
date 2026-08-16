@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'dart:io';
 
 enum UploadPhase {
   transfer,
@@ -73,7 +72,7 @@ class UploadProvider extends ChangeNotifier {
     return (_missionStage.index + 1) / MissionStage.values.length;
   }
 
-  void startUpload(String path) {
+  void startUpload(String fileName, {int? fileSize}) {
     _isUploading = true;
     _isCompleted = false;
     _hasError = false;
@@ -81,12 +80,8 @@ class UploadProvider extends ChangeNotifier {
     _currentPhase = UploadPhase.transfer;
     _transferStep = TransferStep.preparing;
     _transferProgress = 0.0;
-    _fileName = path.split(Platform.pathSeparator).last;
-    try {
-      _fileSize = File(path).lengthSync();
-    } catch (_) {
-      _fileSize = 0;
-    }
+    _fileName = fileName.split('/').last.split('\\').last;
+    _fileSize = fileSize ?? 0;
     _speedMBps = 0.0;
     _eta = Duration.zero;
 
