@@ -201,7 +201,7 @@ class CVRepository:
                 continue
 
         result.sort(
-            key=lambda cv: cv.updated_at,
+            key=lambda cv: cv.metadata.uploaded_at,
             reverse=True,
         )
 
