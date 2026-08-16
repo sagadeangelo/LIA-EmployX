@@ -44,8 +44,6 @@ class MissionProvider extends ChangeNotifier {
       return;
     }
 
-    // Restauración explícita desde backend. No dependemos del estado
-    // anterior del Provider ni de datos almacenados únicamente en memoria.
     restorePersistedMission(missionId);
 
     AppLogger.info(
@@ -57,9 +55,9 @@ class MissionProvider extends ChangeNotifier {
   /// Restaura una misión persistida desde backend y reconstruye el
   /// snapshot que consume directamente el Command Center.
   ///
-  /// Este método es la ruta de recuperación utilizada después de un
-  /// browser refresh. La misión puede estar COMPLETED; en ese caso se
-  /// conserva el snapshot y se sincroniza el ProfessionalProfile.
+  /// Esta es la ruta de recuperación utilizada después de un
+  /// browser refresh. La misión puede estar COMPLETED; en ese caso
+  /// se conserva el snapshot y se sincroniza el ProfessionalProfile.
   Future<void> restorePersistedMission(String missionId) async {
     try {
       _isLoading = true;
@@ -132,7 +130,12 @@ class MissionProvider extends ChangeNotifier {
     _pollingTimer?.cancel();
 
     if (_snapshot == null) {
-      restorePersistedMission(missionId);
+      // No hacemos una llamada recursiva inmediata. Esperamos el
+      // intervalo normal de polling antes de intentar restaurar otra vez.
+      _pollingTimer = Timer(
+        const Duration(seconds: 3),
+        () => restorePersistedMission(missionId),
+      );
       return;
     }
 
