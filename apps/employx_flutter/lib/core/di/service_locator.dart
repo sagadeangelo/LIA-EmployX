@@ -51,9 +51,6 @@ void setupServiceLocator() {
 
   // ------------------------------------------------------------
   // PROFILE REPOSITORY
-  //
-  // Se utiliza para recuperar el ProfessionalProfile asociado
-  // al profileId almacenado dentro de cada CVDocument.
   // ------------------------------------------------------------
 
   sl.registerLazySingleton<ProfileRepository>(
@@ -62,30 +59,9 @@ void setupServiceLocator() {
 
   // ============================================================
   // PROFILE HUB
-  //
-  // UNA ÚNICA INSTANCIA GLOBAL.
-  //
-  // Esta misma instancia será utilizada por:
-  //
-  //   MissionActions
-  //        ↓
-  //   registro de CVs
-  //
-  //   main.dart
-  //        ↓
-  //   Provider<ProfileHubProvider>
-  //
-  //   ProfessionalProfileScreen
-  //        ↓
-  //   lectura del CV/perfil activo
-  //
-  // No crear otra instancia con:
-  //
-  //   ProfileHubProvider()
-  //
-  // fuera de GetIt.
   // ============================================================
 
+  // UNA ÚNICA INSTANCIA GLOBAL.
   sl.registerLazySingleton<ProfileHubProvider>(
     () => ProfileHubProvider(
       profileRepository: sl<ProfileRepository>(),
@@ -120,7 +96,11 @@ void setupServiceLocator() {
   // ============================================================
 
   sl.registerLazySingleton<MissionProvider>(
-    () => MissionProvider(),
+    () => MissionProvider(
+      apiClient: sl<ApiClient>(),
+      onMissionCompleted: () =>
+          sl<MissionActions>().refreshProfileAfterMission(),
+    ),
   );
 
   sl.registerLazySingleton<UploadProvider>(
