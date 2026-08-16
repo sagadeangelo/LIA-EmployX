@@ -24,7 +24,12 @@ class MissionProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Inicia el monitoreo, opcionalmente recibiendo un snapshot inicial.
+  /// Inicia el monitoreo de una misión.
+  ///
+  /// Si no existe un snapshot en memoria, restaura inmediatamente
+  /// el snapshot persistido desde backend. Esto es especialmente
+  /// importante después de un refresh del navegador, porque el
+  /// Provider de Flutter vuelve a crearse vacío.
   void startMonitoring(
     String missionId, {
     MissionSnapshotModel? initialSnapshot,
@@ -33,21 +38,101 @@ class MissionProvider extends ChangeNotifier {
 
     if (initialSnapshot != null) {
       _snapshot = initialSnapshot;
+      _error = null;
       notifyListeners();
+      _scheduleNextPoll(missionId);
+      return;
     }
 
-    _scheduleNextPoll(missionId);
+    // Restauración explícita desde backend. No dependemos del estado
+    // anterior del Provider ni de datos almacenados únicamente en memoria.
+    restorePersistedMission(missionId);
+
     AppLogger.info(
       'MissionProvider',
       'Iniciando monitoreo dinámico de Mission: $missionId',
     );
   }
 
+  /// Restaura una misión persistida desde backend y reconstruye el
+  /// snapshot que consume directamente el Command Center.
+  ///
+  /// Este método es la ruta de recuperación utilizada después de un
+  /// browser refresh. La misión puede estar COMPLETED; en ese caso se
+  /// conserva el snapshot y se sincroniza el ProfessionalProfile.
+  Future<void> restorePersistedMission(String missionId) async {
+    try {
+      _isLoading = true;
+      _error = null;
+      notifyListeners();
+
+      AppLogger.info(
+        'MissionProvider',
+        'Restaurando Mission persistida: $missionId',
+      );
+
+      final response = await _apiClient.get(
+        '/missions/$missionId/snapshot',
+      );
+
+      if (response.statusCode == 200) {
+        _snapshot = MissionSnapshotModel.fromJson(response.data);
+        _error = null;
+        _consecutiveErrors = 0;
+
+        AppLogger.info(
+          'MissionProvider',
+          'Snapshot persistido restaurado: $missionId '
+          '(status=${_snapshot!.mission.status})',
+        );
+
+        if (_snapshot!.mission.status == 'COMPLETED') {
+          await _refreshProfileAfterCompletion(missionId);
+        } else if (_snapshot!.mission.status == 'FAILED' ||
+            _snapshot!.mission.status == 'CANCELLED') {
+          stopMonitoring();
+        } else {
+          _scheduleNextPoll(missionId);
+        }
+      } else if (response.statusCode == 404) {
+        _error = 'Mission $missionId no encontrada en backend.';
+        stopMonitoring();
+
+        AppLogger.warning(
+          'MissionProvider',
+          'Mission persistida no encontrada (404): $missionId',
+        );
+      } else {
+        _error =
+            'No se pudo restaurar la Mission. HTTP ${response.statusCode}';
+        _scheduleNextPoll(missionId);
+      }
+    } catch (e) {
+      _consecutiveErrors++;
+      _error = e.toString();
+
+      AppLogger.error(
+        'MissionProvider',
+        'Error restaurando Mission persistida '
+        '(${_consecutiveErrors}/$_maxConsecutiveErrors): $e',
+      );
+
+      if (_consecutiveErrors < _maxConsecutiveErrors) {
+        _scheduleNextPoll(missionId);
+      } else {
+        stopMonitoring();
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void _scheduleNextPoll(String missionId) {
     _pollingTimer?.cancel();
 
     if (_snapshot == null) {
-      _fetchSnapshot(missionId);
+      restorePersistedMission(missionId);
       return;
     }
 
@@ -72,7 +157,6 @@ class MissionProvider extends ChangeNotifier {
     }
 
     if (_consecutiveErrors > 0) {
-      // Exponential backoff up to 30 seconds.
       int multiplier = 1 << _consecutiveErrors;
       seconds = seconds * multiplier;
       if (seconds > 30) {
@@ -89,8 +173,6 @@ class MissionProvider extends ChangeNotifier {
   }
 
   Future<void> _refreshProfileAfterCompletion(String missionId) async {
-    // Evita repetir la recarga si el mismo snapshot COMPLETED
-    // vuelve a entrar por una llamada adicional.
     if (_completedMissionId == missionId) {
       stopMonitoring();
       return;
@@ -152,15 +234,12 @@ class MissionProvider extends ChangeNotifier {
         _error = null;
         _consecutiveErrors = 0;
 
-        // Si los agentes ya terminaron, sincronizamos el perfil antes
-        // de detener definitivamente el monitoreo.
         if (_snapshot!.mission.status == 'COMPLETED') {
           await _refreshProfileAfterCompletion(missionId);
         } else {
           _scheduleNextPoll(missionId);
         }
       } else if (response.statusCode == 404) {
-        // Mission is gone — stop polling permanently.
         AppLogger.info(
           'MissionProvider',
           'Mission $missionId not found (404) — stopping poll.',
@@ -182,7 +261,6 @@ class MissionProvider extends ChangeNotifier {
         );
         stopMonitoring();
       } else {
-        // Retry with last known state.
         _scheduleNextPoll(missionId);
       }
     } finally {
