@@ -13,7 +13,7 @@ from backend.agents.base.shared_memory import SharedMemoryKey
 from backend.modules.mission.models import MissionEvent, MissionEventType
 
 
-import httpx
+from backend.api.routes.jobs_proxy import fetch_freehire_payload
 
 class JobHunter(BaseAgent):
 
@@ -97,15 +97,9 @@ async def _fetch_real_jobs(skills: list, roles: list) -> List[dict]:
         q_parts.extend(skills[:3])
     q = " ".join(q_parts)
 
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        response = await client.get(
-            "https://freehire.me/api/v1/jobs/search",
-            params={"q": q, "limit": 10},
-            headers={"Accept": "application/json"}
-        )
-        response.raise_for_status()
-        payload = response.json()
-        data = payload.get("data", [])
+    params = {"q": q, "limit": 10, "offset": 0}
+    payload = await fetch_freehire_payload(params)
+    data = payload.get("data", [])
 
     jobs = []
     for j in data:

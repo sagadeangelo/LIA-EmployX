@@ -97,6 +97,23 @@ def _build_search_params(
     return params
 
 
+async def fetch_freehire_payload(params: dict[str, Any]) -> dict[str, Any]:
+    """
+    Realiza la petición HTTP cruda a FreeHire y devuelve el payload JSON.
+    No captura excepciones de httpx.
+    """
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        response = await client.get(
+            _FREEHIRE_SEARCH_URL,
+            params=params,
+            headers={
+                "Accept": "application/json",
+            },
+        )
+    response.raise_for_status()
+    return response.json()
+
+
 async def _request_freehire(
     *,
     params: dict[str, Any],
@@ -112,18 +129,7 @@ async def _request_freehire(
     )
 
     try:
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            response = await client.get(
-                _FREEHIRE_SEARCH_URL,
-                params=params,
-                headers={
-                    "Accept": "application/json",
-                },
-            )
-
-        response.raise_for_status()
-
-        payload = response.json()
+        payload = await fetch_freehire_payload(params)
 
         logger.info(
             "[JobsProxy] FreeHire /jobs/search → %s (%d bytes)",
