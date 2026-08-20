@@ -13,6 +13,8 @@ from backend.agents.base.shared_memory import SharedMemoryKey
 from backend.modules.mission.models import MissionEvent, MissionEventType
 
 
+import httpx
+
 class JobHunter(BaseAgent):
 
     @property
@@ -38,19 +40,24 @@ class JobHunter(BaseAgent):
 
         mission = context.mission
         skills = context.shared_memory.get(SharedMemoryKey.SKILLS, [])
-        target_companies = context.shared_memory.get(SharedMemoryKey.TARGET_COMPANIES, [])
         target_roles = context.shared_memory.get(SharedMemoryKey.TARGET_ROLES, ["Software Engineer"])
         ats_score = context.shared_memory.get(SharedMemoryKey.ATS_SCORE, 70)
 
-        job_matches = _simulate_job_search(skills, target_companies, target_roles, mission.remote)
-        top_jobs = sorted(job_matches, key=lambda j: j["match_score"], reverse=True)[:5]
+        try:
+            job_matches = await _fetch_real_jobs(skills, target_roles)
+        except Exception as e:
+            self.log(f"Error consultando vacantes: {e}")
+            return AgentResult.failure(f"Error consultando FreeHire: {e}")
+
+        # Como el match_score ya no se inventa (es None), simplemente tomamos los primeros 5
+        top_jobs = job_matches[:5]
 
         recommendations = [
             f"Encontradas {len(job_matches)} vacantes compatibles.",
         ]
         if top_jobs:
             recommendations.append(
-                f"Top match: {top_jobs[0]['company']} - {top_jobs[0]['title']} ({top_jobs[0]['match_score']}%)"
+                f"Top job: {top_jobs[0]['company']} - {top_jobs[0]['title']}"
             )
         if ats_score < 70:
             recommendations.append("Mejora tu ATS score antes de aplicar para aumentar tasas de respuesta.")
@@ -81,24 +88,39 @@ class JobHunter(BaseAgent):
         )
 
 
-def _simulate_job_search(skills: list, companies: list, roles: list, remote: bool) -> List[dict]:
-    """Simula busqueda de vacantes (Fase 3). Fase 4+: conectar a APIs reales."""
-    DEFAULT_COMPANIES = ["Google", "Microsoft", "Stripe", "Notion", "Vercel", "Linear", "Shopify"]
-    search_companies = companies if companies else DEFAULT_COMPANIES
-    role = roles[0] if roles else "Software Engineer"
+async def _fetch_real_jobs(skills: list, roles: list) -> List[dict]:
+    """Busca vacantes reales en FreeHire usando el proxy config."""
+    q_parts = []
+    if roles:
+        q_parts.append(roles[0])
+    if skills:
+        q_parts.extend(skills[:3])
+    q = " ".join(q_parts)
+
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        response = await client.get(
+            "https://freehire.me/api/v1/jobs/search",
+            params={"q": q, "limit": 10},
+            headers={"Accept": "application/json"}
+        )
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data", [])
+
     jobs = []
-    for i, company in enumerate(search_companies[:8]):
-        match = max(50, 95 - i * 5)
+    for j in data:
+        enrichment = j.get("enrichment", {})
         jobs.append({
-            "id": f"job_{i+1}",
-            "company": company,
-            "title": f"Senior {role}",
-            "location": "Remote" if remote else "San Francisco, CA",
-            "remote": remote,
-            "salary_min": 120000 + i * 5000,
-            "salary_max": 160000 + i * 5000,
-            "match_score": match,
-            "required_skills": skills[:4] if skills else ["Python", "SQL"],
-            "url": f"https://careers.{company.lower()}.com/job_{i+1}",
+            "id": j.get("public_slug") or j.get("external_id") or "unknown",
+            "company": j.get("company", "Empresa Confidencial"),
+            "title": j.get("title", "Posición Confidencial"),
+            "location": j.get("location", ""),
+            "remote": j.get("work_mode", "") == "remote",
+            "salary_min": enrichment.get("salary_min"),
+            "salary_max": enrichment.get("salary_max"),
+            "match_score": None,  # No inventar datos
+            "required_skills": j.get("skills", []),
+            "url": j.get("url", ""),
+            "description": j.get("description", "")
         })
     return jobs
