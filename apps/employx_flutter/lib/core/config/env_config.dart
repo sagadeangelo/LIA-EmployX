@@ -8,7 +8,7 @@ class EnvConfig {
   // flutter build web --dart-define=API_BASE_URL=https://api.lia-tech.com
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://127.0.0.1:8000/api/v1',
+    defaultValue: 'http://127.0.0.1:8001/api/v1',
   );
 
   static const int connectTimeout = 15000;
