@@ -131,15 +131,16 @@ async def _request_freehire(
     try:
         payload = await fetch_freehire_payload(params)
 
+        data_count = len(payload.get("data", [])) if isinstance(payload, dict) else 0
+
         logger.info(
-            "[JobsProxy] FreeHire /jobs/search → %s (%d bytes)",
-            response.status_code,
-            len(response.content),
+            "[JobsProxy] FreeHire /jobs/search → 200 (%d jobs)",
+            data_count,
         )
 
         return JSONResponse(
             content=payload,
-            status_code=response.status_code,
+            status_code=200,
         )
 
     except httpx.TimeoutException as exc:
