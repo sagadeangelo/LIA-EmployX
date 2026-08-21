@@ -582,25 +582,38 @@ String _formatPostedDate(DateTime? date) {
       _isDetectingLocation = true;
     });
 
-    final result = await DeviceLocationService.detectLocation();
+    try {
+      final result = await DeviceLocationService.detectLocation();
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (result is LocationSuccess) {
-      _locationController.text = result.location.displayName;
-      await _performSearch();
-    } else if (result is LocationError) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.message),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      if (result is LocationSuccess) {
+        _locationController.text = result.location.displayName;
+        await _performSearch();
+      } else if (result is LocationError) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result.message),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No fue posible detectar la ubicación: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDetectingLocation = false;
+        });
+      }
     }
-
-    setState(() {
-      _isDetectingLocation = false;
-    });
   }
 
   Widget _buildSearchPanel(BuildContext context) {
