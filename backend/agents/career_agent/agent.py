@@ -93,12 +93,16 @@ class CareerAgent(BaseAgent):
                 profile.skills.technical_skills.extend([s for s in detected_skills if s not in profile.skills.technical_skills])
                 
                 repo.save(profile)
-
         return AgentResult.ok(
             progress=100,
             recommendations=recommendations,
             events=events,
-            memory_updates={},
+            memory_updates={
+                SharedMemoryKey.SKILLS: detected_skills,
+                SharedMemoryKey.TARGET_ROLES: [mission.target_position]
+                if mission.target_position
+                else ["Software Engineer"],
+            },
         )
 
 
