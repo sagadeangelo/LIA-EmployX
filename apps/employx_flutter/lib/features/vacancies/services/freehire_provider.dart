@@ -40,32 +40,28 @@ class FreeHireProvider {
               ),
             );
 
-  /// Busca vacantes en FreeHire.
-  ///
-  /// [query] debe contener únicamente contexto profesional:
-  /// cargo, skills relevantes. NO debe contener ubicación.
-  ///
-  /// [countries] acepta uno o varios códigos ISO 3166-1 alpha-2
-  /// separados por coma (ej. "mx", "mx,us"). Este es el único
-  /// mecanismo de filtrado geográfico real que soporta FreeHire
-  /// en /jobs/search. Parámetros como location, city, region o
-  /// country son ignorados por la API.
-  ///
-  /// [limit] y [offset] controlan la paginación.
+  /// Busca vacantes en FreeHire con soporte de contexto profesional
+  /// y filtros geográficos jerárquicos (país, ciudad y región).
   Future<List<VacancyModel>> searchJobs({
     String query = '',
     String countries = '',
+    String? city,
+    String? region,
     int limit = 20,
     int offset = 0,
   }) async {
     final trimmedQuery = query.trim();
     final trimmedCountries = countries.trim();
+    final trimmedCity = city?.trim() ?? '';
+    final trimmedRegion = region?.trim() ?? '';
 
     final response = await _dio.get(
       '/jobs/search',
       queryParameters: {
         if (trimmedQuery.isNotEmpty) 'q': trimmedQuery,
         if (trimmedCountries.isNotEmpty) 'countries': trimmedCountries,
+        if (trimmedCity.isNotEmpty) 'city': trimmedCity,
+        if (trimmedRegion.isNotEmpty) 'region': trimmedRegion,
         'limit': limit,
         'offset': offset,
       },

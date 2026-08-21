@@ -154,6 +154,8 @@ class VacancyProvider extends ChangeNotifier {
       final results = await _repository.searchJobs(
         query: _query,
         countries: _countries,
+        city: _city,
+        region: _region,
         limit: limit,
         offset: 0,
       );
@@ -187,7 +189,7 @@ class VacancyProvider extends ChangeNotifier {
     _setLoading(true);
 
     try {
-      final results = _query.isEmpty
+      final results = _query.isEmpty && _countries.isEmpty && _city == null && _region == null
           ? await _repository.getJobs(
               limit: limit,
               offset: _currentOffset,
@@ -195,6 +197,8 @@ class VacancyProvider extends ChangeNotifier {
           : await _repository.searchJobs(
               query: _query,
               countries: _countries,
+              city: _city,
+              region: _region,
               limit: limit,
               offset: _currentOffset,
             );
