@@ -5,6 +5,7 @@ import '../models/vacancy_model.dart';
 import '../providers/vacancy_provider.dart';
 import '../services/location_resolver.dart';
 import '../services/device_location_service.dart';
+import '../services/lia_match_calculator.dart';
 
 import '../../profile/providers/profile_hub_provider.dart';
 import '../../../core/models/professional_profile_model.dart';
@@ -31,9 +32,18 @@ class _VacanciesScreenState extends State<VacanciesScreen> {
 
 List<_Job> _mapVacanciesToJobs(
   List<VacancyModel> vacancies,
-  ProfessionalProfile? profile,
-) {
+  ProfessionalProfile? profile, {
+  String? city,
+  String? region,
+}) {
   return vacancies.map((vacancy) {
+    final breakdown = LiaMatchCalculator.calculate(
+      vacancy: vacancy,
+      profile: profile,
+      candidateCity: city,
+      candidateRegion: region,
+    );
+
     return _Job(
       id: vacancy.id,
       title: vacancy.title.isEmpty
@@ -50,7 +60,8 @@ List<_Job> _mapVacanciesToJobs(
           ? 'No especificado'
           : vacancy.experienceLevel,
       salary: _formatSalary(vacancy),
-      match: _calculateInitialMatch(vacancy, profile),
+      match: breakdown.overall,
+      matchBreakdown: breakdown,
       posted: _formatPostedDate(vacancy.postedAt),
       source: vacancy.source.isEmpty
           ? 'LIA EmployX'
@@ -97,40 +108,6 @@ String _k(num value) {
     return '${(value / 1000).toStringAsFixed(0)}k';
   }
   return value.toString();
-}
-
-int _calculateInitialMatch(VacancyModel vacancy, ProfessionalProfile? profile) {
-  if (profile == null || profile.skills.items.isEmpty) {
-    final skillCount = vacancy.skills.length;
-    if (skillCount >= 8) return 90;
-    if (skillCount >= 5) return 85;
-    if (skillCount >= 3) return 80;
-    if (skillCount >= 1) return 75;
-    return 70;
-  }
-
-  final vacancySkills = vacancy.skills.map((s) => s.toLowerCase()).toSet();
-  if (vacancySkills.isEmpty) return 70;
-
-  final profileSkills = profile.skills.items.map((s) => s.name.toLowerCase()).toSet();
-  
-  int matchCount = 0;
-  for (final vs in vacancySkills) {
-    if (profileSkills.contains(vs)) {
-      matchCount++;
-    } else {
-       for (final ps in profileSkills) {
-         if (ps.contains(vs) || vs.contains(ps)) {
-           matchCount++;
-           break;
-         }
-       }
-    }
-  }
-
-  final ratio = matchCount / vacancySkills.length;
-  final score = 50 + (ratio * 50).toInt();
-  return score.clamp(0, 100);
 }
 
 String _formatPostedDate(DateTime? date) {
@@ -222,16 +199,15 @@ String _formatPostedDate(DateTime? date) {
     super.dispose();
   }
 
-  // ── Ranking geográfico ───────────────────────────────────────
+  // ── Ranking geográfico y compatibilidad Match LIA ────────────
 
-  /// Ordena los trabajos aplicando prioridad geográfica:
-  ///   1. Ciudad exacta  2. Estado/Región  3. País  4. Remoto  5. Internacional
+  /// Ordena los trabajos aplicando compatibilidad Match LIA y prioridad geográfica:
+  ///   1. Mayor Match LIA (evaluación integral: skills, exp, puesto, modalidad, ubicación).
+  ///   2. Si la diferencia de Match es mínima (<= 2 pts), desempata por proximidad geográfica.
   List<_Job> _applyGeoRanking(List<_Job> jobs) {
     final provider = context.read<VacancyProvider>();
     final city = (provider.city ?? '').toLowerCase();
     final region = (provider.region ?? '').toLowerCase();
-
-    if (city.isEmpty && region.isEmpty) return jobs;
 
     int geoScore(_Job job) {
       final loc = job.location.toLowerCase();
@@ -246,8 +222,14 @@ String _formatPostedDate(DateTime? date) {
     }
 
     final sorted = [...jobs]..sort((a, b) {
+      final matchDiff = b.match - a.match;
+      if (matchDiff.abs() > 2) {
+        return matchDiff.compareTo(0);
+      }
+
       final geo = geoScore(b).compareTo(geoScore(a));
       if (geo != 0) return geo;
+
       return b.match.compareTo(a.match);
     });
     return sorted;
@@ -255,8 +237,13 @@ String _formatPostedDate(DateTime? date) {
 
   List<_Job> get _filteredJobs {
     final provider = context.read<VacancyProvider>();
-    final profile = context.read<ProfileHubProvider>().activeProfessionalProfile;
-    final liveJobs = _mapVacanciesToJobs(provider.vacancies, profile);
+    final profile = context.watch<ProfileHubProvider>().activeProfessionalProfile;
+    final liveJobs = _mapVacanciesToJobs(
+      provider.vacancies,
+      profile,
+      city: provider.city,
+      region: provider.region,
+    );
 
     final query = _searchController.text.trim().toLowerCase();
 
@@ -293,8 +280,13 @@ String _formatPostedDate(DateTime? date) {
   _Job? get _selectedJob {
     if (_selectedJobId == null) return null;
     final provider = context.read<VacancyProvider>();
-    final profile = context.read<ProfileHubProvider>().activeProfessionalProfile;
-    final liveJobs = _mapVacanciesToJobs(provider.vacancies, profile);
+    final profile = context.watch<ProfileHubProvider>().activeProfessionalProfile;
+    final liveJobs = _mapVacanciesToJobs(
+      provider.vacancies,
+      profile,
+      city: provider.city,
+      region: provider.region,
+    );
     for (final job in liveJobs) {
       if (job.id == _selectedJobId) return job;
     }
@@ -357,6 +349,10 @@ String _formatPostedDate(DateTime? date) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final provider = context.watch<VacancyProvider>();
+    // Escuchamos activamente el ProfileHubProvider para que cualquier cambio
+    // de CV activo (estrella ⭐) o hidratación de perfil provoque el recálculo
+    // inmediato del Match LIA y reordenamiento de las vacantes cargadas.
+    context.watch<ProfileHubProvider>();
 
     return Scaffold(
       backgroundColor: colors.surface,
@@ -1104,6 +1100,7 @@ class _Job {
   final String level;
   final String salary;
   final int match;
+  final LiaMatchBreakdown? matchBreakdown;
   final String posted;
   final String source;
   final List<String> skills;
@@ -1118,6 +1115,7 @@ class _Job {
     required this.level,
     required this.salary,
     required this.match,
+    this.matchBreakdown,
     required this.posted,
     required this.source,
     required this.skills,
