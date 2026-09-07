@@ -51,13 +51,13 @@ class TXTReader(BaseReader):
 
         encodings = [
 
-            "utf-8",
-
             "utf-8-sig",
 
-            "latin-1",
+            "utf-8",
 
-            "cp1252"
+            "cp1252",
+
+            "latin-1"
 
         ]
 
@@ -94,6 +94,9 @@ class TXTReader(BaseReader):
                 f"No fue posible leer el archivo:\n{file_path}"
 
             )
+
+        if "\x00" in text:
+            raise ValueError("El TXT contiene datos binarios o usa una codificación no admitida. Guarda el texto como UTF-8.")
 
         content.text = text
 

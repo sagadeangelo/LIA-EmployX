@@ -37,7 +37,7 @@ class Certification:
 
     description: str = ""
 
-    confidence: float = 1.0
+    confidence: float | None = None
 
     # ---------------------------------------------------------
 

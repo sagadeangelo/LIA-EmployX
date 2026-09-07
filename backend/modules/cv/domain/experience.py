@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -15,3 +15,6 @@ class Experience:
     location: str = ""
 
     description: str = ""
+    employment_type: str = ""
+    current: bool = False
+    achievements: list[str] = field(default_factory=list)
