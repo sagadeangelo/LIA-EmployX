@@ -8,4 +8,4 @@ class Skill:
 
     level: str = ""
 
-    years: float = 0.0
+    years: float | None = None

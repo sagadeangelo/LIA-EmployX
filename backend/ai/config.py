@@ -77,7 +77,7 @@ LMSTUDIO_MODELS_ENDPOINT = LMSTUDIO_API + "/models"
 # Modelo por defecto
 # ===============================================================
 
-DEFAULT_MODEL = "google/gemma-4-e4b"
+DEFAULT_MODEL = os.getenv("LMSTUDIO_MODEL", "google/gemma-4-e4b")
 
 # Puedes cambiarlo fácilmente a:
 

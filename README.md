@@ -1,5 +1,8 @@
 # 🚀 The AI Career Operating System
 
+> **Flujo de CV en desarrollo local:** importación PDF/TXT, revisión editable y persistencia SQLite. Consulta [instalación, alcance y pruebas](docs/CV_FLOW.md). Las funcionalidades de producto descritas más abajo incluyen la visión futura.
+
+
 <p align="center">
   <img src="apps/employx_flutter/assets/images/lia_employx_video_cover.png" alt="LIA-EmployX - The AI Career Operating System" width="100%">
 </p>

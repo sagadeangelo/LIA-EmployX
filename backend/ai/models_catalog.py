@@ -101,7 +101,7 @@ MODELS = {
 
     "gemma": AIModel(
 
-        name="google/gemma-4-e4b",
+        name=DEFAULT_MODEL,
 
         provider="lmstudio",
 

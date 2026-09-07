@@ -48,3 +48,6 @@ Thumbs.db
 *.db
 *.db-wal
 *.db-shm
+# CV test tooling and SQLite journal
+.pytest_cache/
+*.sqlite-journal
